@@ -6,6 +6,7 @@ import DataTable from './components/DataTable';
 
 const PRESET_DEFAULTS = {
   main: [
+    { id: 'battle_id', label: 'Battle ID', x: 20, y: 700, width: 250, height: 40, type: 'header' },
     { id: 'kills', label: 'Kills', x: 10, y: 10, width: 60, height: 250 },
     { id: 'deaths', label: 'Deaths', x: 80, y: 10, width: 60, height: 250 },
     { id: 'assists', label: 'Assists', x: 150, y: 10, width: 60, height: 250 },
@@ -36,9 +37,34 @@ const PRESET_DEFAULTS = {
   ]
 };
 
+const levenshtein = (a, b) => {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix = Array(a.length + 1).fill(null).map(() => Array(b.length + 1).fill(null));
+  for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+  for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j] + 1,
+        matrix[i - 1][j - 1] + indicator
+      );
+    }
+  }
+  return matrix[a.length][b.length];
+};
+
 function App() {
-  const [imageSrc, setImageSrc] = useState(null);
-  const [imageSize, setImageSize] = useState(null);
+  const [uploadedImages, setUploadedImages] = useState([]);
+  const [activeImageId, setActiveImageId] = useState(null);
+  
+  const [presetConfigs, setPresetConfigs] = useState(PRESET_DEFAULTS);
+  
+  const activeImgData = uploadedImages.find(img => img.id === activeImageId);
+  const imageSrc = activeImgData?.url;
+  const imageSize = activeImgData ? { width: activeImgData.width, height: activeImgData.height } : null;
   const [displayScale, setDisplayScale] = useState(1);
   const [boxes, setBoxes] = useState([]);
   const [activeBoxId, setActiveBoxId] = useState(null);
@@ -54,21 +80,48 @@ function App() {
   const containerRef = useRef(null);
   const imageObjRef = useRef(null);
 
+  useEffect(() => {
+    if (activeImgData) {
+      imageObjRef.current = activeImgData.imgObj;
+    }
+  }, [activeImgData]);
+
   // Load image
   const handleImageUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
     
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      setImageSrc(url);
-      setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-      imageObjRef.current = img;
-      
-      loadConfigForPreset(img.naturalWidth, img.naturalHeight, activePreset);
-    };
-    img.src = url;
+    const availablePresets = ['main', 'dps', 'team', 'overall', 'farm'];
+    
+    files.forEach((file, index) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        setUploadedImages(prev => {
+          const usedPresets = prev.map(p => p.preset);
+          const nextPreset = availablePresets.find(p => !usedPresets.includes(p)) || 'main';
+          
+          const newImg = {
+            id: Date.now().toString() + index + Math.random(),
+            url,
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+            imgObj: img,
+            preset: nextPreset,
+            file
+          };
+          
+          const newList = [...prev, newImg];
+          if (newList.length === 1 && prev.length === 0) {
+             setActiveImageId(newImg.id);
+             setActivePreset(nextPreset);
+             loadConfigForPreset(img.naturalWidth, img.naturalHeight, nextPreset);
+          }
+          return newList;
+        });
+      };
+      img.src = url;
+    });
   };
 
   const loadConfigForPreset = (width, height, preset) => {
@@ -87,9 +140,14 @@ function App() {
 
   const handlePresetChange = (e) => {
     const newPreset = e.target.value;
+    setPresetConfigs(prev => ({ ...prev, [activePreset]: boxes }));
     setActivePreset(newPreset);
-    if (imageSize) {
-      loadConfigForPreset(imageSize.width, imageSize.height, newPreset);
+    if (presetConfigs[newPreset]) {
+      setBoxes(presetConfigs[newPreset]);
+    } else {
+      if (imageSize) {
+        loadConfigForPreset(imageSize.width, imageSize.height, newPreset);
+      }
     }
   };
 
@@ -207,7 +265,7 @@ function App() {
   };
 
   const processOCR = async () => {
-    if (!imageObjRef.current || boxes.length === 0) return;
+    if (!imageObjRef.current || boxes.length === 0 || uploadedImages.length === 0) return;
     setIsProcessing(true);
     
     const results = [];
@@ -217,49 +275,124 @@ function App() {
       await worker.setParameters({
         tessedit_char_whitelist: '0123456789./%',
       });
+
+      // --- Battle ID Verification Pass ---
+      const mainConfig = activePreset === 'main' ? boxes : presetConfigs.main;
+      const battleIdBox = mainConfig.find(b => b.id === 'battle_id');
       
-      for (const box of boxes) {
-        const sliceHeight = box.height / 5;
-        const isLeftTeam = box.x < (imageSize.width / 2);
-        
-        for (let i = 0; i < 5; i++) {
-          const offCanvas = document.createElement('canvas');
-          const pad = 4;
-          offCanvas.width = box.width + pad*2;
-          offCanvas.height = sliceHeight + pad*2;
-          const ctx = offCanvas.getContext('2d');
+      if (battleIdBox) {
+         let referenceId = null;
+         for (const imgData of uploadedImages) {
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = battleIdBox.width;
+            offCanvas.height = battleIdBox.height;
+            const ctx = offCanvas.getContext('2d');
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+            ctx.drawImage(
+               imgData.imgObj,
+               battleIdBox.x, battleIdBox.y,
+               battleIdBox.width, battleIdBox.height,
+               0, 0,
+               battleIdBox.width, battleIdBox.height
+            );
+            const { data: { text } } = await worker.recognize(offCanvas.toDataURL('image/png'));
+            const extractedId = text.trim().replace(/[^0-9]/g, '');
+            
+            if (extractedId.length > 5) {
+                if (!referenceId) {
+                   referenceId = extractedId;
+                } else {
+                   const dist = levenshtein(referenceId, extractedId);
+                   if (dist > 3) {
+                      alert(`Battle ID mismatch detected!\nExpected: ${referenceId}\nFound: ${extractedId} (in ${imgData.preset} tab)\n\nPlease ensure all screenshots are from the same match.`);
+                      await worker.terminate();
+                      setIsProcessing(false);
+                      return;
+                   }
+                }
+            }
+         }
+      }
+      
+      const allResults = [];
+
+      for (const imgData of uploadedImages) {
+        const configBoxes = presetConfigs[imgData.preset];
+        if (!configBoxes || configBoxes.length === 0) continue;
+
+        for (const box of configBoxes) {
+          if (box.type === 'header') {
+             // Standard 1-to-1 extraction for header boxes
+             const offCanvas = document.createElement('canvas');
+             offCanvas.width = box.width;
+             offCanvas.height = box.height;
+             const ctx = offCanvas.getContext('2d');
+             ctx.fillStyle = 'white';
+             ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+             ctx.drawImage(
+                imgData.imgObj,
+                box.x, box.y, box.width, box.height,
+                0, 0, box.width, box.height
+             );
+             const { data: { text } } = await worker.recognize(offCanvas.toDataURL('image/png'));
+             
+             // Prevent pushing duplicate header entries from multiple images (e.g. Battle ID)
+             if (!allResults.some(r => r.id === box.id)) {
+                 allResults.push({
+                   id: box.id,
+                   boxId: box.id,
+                   label: box.label,
+                   playerIndex: 0,
+                   text: text.trim().replace(/[^0-9./%]/g, ''),
+                   imgDataUrl: offCanvas.toDataURL('image/png')
+                 });
+             }
+             continue;
+          }
+
+          const sliceHeight = box.height / 5;
+          const isLeftTeam = box.x < (imgData.width / 2);
           
-          ctx.fillStyle = 'white';
-          ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
-          
-          ctx.drawImage(
-            imageObjRef.current,
-            Math.max(0, box.x - pad), Math.max(0, box.y + (sliceHeight * i) - pad),
-            box.width + pad*2, sliceHeight + pad*2,
-            0, 0,
-            box.width + pad*2, sliceHeight + pad*2
-          );
-          
-          const dataUrl = offCanvas.toDataURL('image/png');
-          const { data: { text } } = await worker.recognize(dataUrl);
-          
-          const playerIndex = isLeftTeam ? (i + 1) : (i + 6);
-          
-          results.push({
-            id: `${box.id}_p${playerIndex}`,
-            boxId: box.id,
-            label: box.label,
-            playerIndex,
-            text: text.trim().replace(/[^0-9./%]/g, ''),
-            imgDataUrl: dataUrl
-          });
+          for (let i = 0; i < 5; i++) {
+            const offCanvas = document.createElement('canvas');
+            const pad = 4;
+            offCanvas.width = box.width + pad*2;
+            offCanvas.height = sliceHeight + pad*2;
+            const ctx = offCanvas.getContext('2d');
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+            
+            ctx.drawImage(
+              imgData.imgObj,
+              Math.max(0, box.x - pad), Math.max(0, box.y + (sliceHeight * i) - pad),
+              box.width + pad*2, sliceHeight + pad*2,
+              0, 0,
+              box.width + pad*2, sliceHeight + pad*2
+            );
+            
+            const dataUrl = offCanvas.toDataURL('image/png');
+            const { data: { text } } = await worker.recognize(dataUrl);
+            
+            const playerIndex = isLeftTeam ? (i + 1) : (i + 6);
+            
+            allResults.push({
+              id: `${box.id}_p${playerIndex}`,
+              boxId: box.id,
+              label: `[${imgData.preset.toUpperCase()}] ${box.label}`,
+              playerIndex,
+              text: text.trim().replace(/[^0-9./%]/g, ''),
+              imgDataUrl: dataUrl
+            });
+          }
         }
       }
       
       await worker.terminate();
       
-      results.sort((a, b) => a.playerIndex - b.playerIndex);
-      setReviewData(results);
+      allResults.sort((a, b) => a.playerIndex - b.playerIndex);
+      setReviewData(allResults);
     } catch (err) {
       console.error(err);
       alert("OCR Processing failed.");
@@ -269,60 +402,119 @@ function App() {
   };
 
   const handleReviewConfirm = (finalData) => {
+    const playerRows = [];
+    for (let p = 1; p <= 10; p++) {
+      const row = { playerIndex: p };
+      Object.keys(presetConfigs).forEach(preset => {
+        presetConfigs[preset].forEach(box => {
+          if (box.type === 'header') {
+            row[box.id] = finalData[box.id] || '';
+          } else {
+            row[box.id] = finalData[`${box.id}_p${p}`] || '';
+          }
+        });
+      });
+      playerRows.push(row);
+    }
+    
     setSavedRows(prev => [...prev, {
       id: Date.now().toString(),
       timestamp: new Date().toLocaleTimeString(),
-      data: finalData
+      data: playerRows,
+      columns: Object.values(presetConfigs).flat()
     }]);
     setReviewData(null);
   };
+
+  const duplicateTabs = uploadedImages.filter((img, i, arr) => arr.findIndex(img2 => img2.preset === img.preset) !== i).map(img => img.preset);
+  const hasDuplicates = duplicateTabs.length > 0;
 
   return (
     <div className="app-container">
       <header className="header">
         <h1 className="title-glow">MLBB Stat Extractor</h1>
-        <p className="subtitle">On-Device OCR Engine</p>
+        <p className="subtitle">Batch Upload Mode (10-Player Extraction)</p>
       </header>
 
       <div className="glass-panel">
-        {!imageSrc ? (
+        {uploadedImages.length === 0 ? (
           <div className="upload-area" onClick={() => document.getElementById('file-upload').click()}>
             <Upload size={48} color="var(--color-cyan-glow)" style={{ marginBottom: '1rem' }} />
-            <h3>Upload Post-Game Screenshot</h3>
-            <p style={{ color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>Drag & drop or click to select</p>
+            <h3>Upload Post-Game Screenshots</h3>
+            <p style={{ color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>Select up to 5 tabs from the same match</p>
             <input 
               id="file-upload" 
               type="file" 
               accept="image/*" 
+              multiple
               style={{ display: 'none' }} 
               onChange={handleImageUpload} 
             />
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Batch Gallery UI */}
+            <div className="batch-gallery" style={{ display: 'flex', gap: '1rem', overflowX: 'auto', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+              {uploadedImages.map(imgData => (
+                 <div key={imgData.id} 
+                      onClick={() => {
+                         setPresetConfigs(prev => ({ ...prev, [activePreset]: boxes }));
+                         setActiveImageId(imgData.id);
+                         setActivePreset(imgData.preset);
+                         setBoxes(presetConfigs[imgData.preset]);
+                      }}
+                      style={{ 
+                         cursor: 'pointer',
+                         padding: '0.5rem',
+                         border: activeImageId === imgData.id ? '2px solid var(--color-cyan-glow)' : '2px solid transparent',
+                         borderRadius: '8px',
+                         background: 'var(--color-bg-deep)',
+                         minWidth: '150px',
+                         display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'center'
+                      }}>
+                    <img src={imgData.url} alt="thumb" style={{ height: '80px', objectFit: 'contain' }} />
+                    <select 
+                       value={imgData.preset} 
+                       onClick={(e) => e.stopPropagation()}
+                       onChange={(e) => {
+                          const val = e.target.value;
+                          setUploadedImages(prev => prev.map(p => p.id === imgData.id ? { ...p, preset: val } : p));
+                          if (activeImageId === imgData.id) {
+                             setPresetConfigs(prev => ({ ...prev, [activePreset]: boxes }));
+                             setActivePreset(val);
+                             setBoxes(presetConfigs[val]);
+                          }
+                       }}
+                       style={{ background: 'transparent', color: duplicateTabs.includes(imgData.preset) ? '#ff4a4a' : 'var(--color-gold-glow)', border: '1px solid rgba(255,255,255,0.2)', padding: '0.2rem' }}
+                    >
+                      <option value="main">Main Tab</option>
+                      <option value="dps">DPS Tab</option>
+                      <option value="team">Team Tab</option>
+                      <option value="overall">Overall Tab</option>
+                      <option value="farm">Farm Tab</option>
+                    </select>
+                 </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', border: '2px dashed rgba(255,255,255,0.2)', borderRadius: '8px', cursor: 'pointer', minWidth: '100px' }} onClick={() => document.getElementById('file-upload').click()}>
+                 <Plus size={24} color="var(--color-text-muted)" />
+              </div>
+            </div>
+
+            {hasDuplicates && (
+              <div style={{ padding: '0.5rem', background: 'rgba(255, 74, 74, 0.2)', color: '#ff4a4a', borderRadius: '4px', textAlign: 'center' }}>
+                Warning: Duplicate tabs selected. Please assign a unique tab to each screenshot.
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <select 
-                  value={activePreset} 
-                  onChange={handlePresetChange}
-                  style={{
-                    background: 'var(--color-bg-deep)', color: 'var(--color-cyan-glow)',
-                    border: '1px solid var(--color-cyan-glow)', padding: '0.6rem 1rem',
-                    borderRadius: '4px', fontFamily: 'var(--font-display)', cursor: 'pointer'
-                  }}
-                >
-                  <option value="main">Main Tab</option>
-                  <option value="dps">DPS Tab</option>
-                  <option value="team">Team Tab</option>
-                  <option value="overall">Overall Tab</option>
-                  <option value="farm">Farm Tab</option>
-                </select>
+                <span style={{color: 'var(--color-gold-glow)', fontWeight: 'bold'}}>{activePreset.toUpperCase()} TAB CONFIG</span>
                 <button className="btn btn-cyan" onClick={addBox}><Plus size={16} /> Add Box</button>
                 <button className="btn" onClick={removeBox} disabled={!activeBoxId}><Trash2 size={16} /> Remove Selected</button>
                 <button className="btn" onClick={resetConfig}><RefreshCcw size={16} /> Reset Config</button>
               </div>
-              <button className="btn btn-cyan" onClick={processOCR} disabled={isProcessing}>
-                {isProcessing ? 'Processing...' : <><Play size={16} /> Run OCR</>}
+              <button className="btn btn-cyan" onClick={processOCR} disabled={isProcessing || hasDuplicates}>
+                {isProcessing ? 'Processing...' : <><Play size={16} /> Run OCR on Active Image</>}
               </button>
             </div>
             
@@ -348,11 +540,15 @@ function App() {
                 >
                   <div className="bounding-box-label">{box.label}</div>
                   
-                  {/* Visual dividers for the 5 slices */}
-                  <div style={{ position: 'absolute', top: '20%', left: 0, width: '100%', borderTop: '1px dashed rgba(255,255,255,0.3)' }} />
-                  <div style={{ position: 'absolute', top: '40%', left: 0, width: '100%', borderTop: '1px dashed rgba(255,255,255,0.3)' }} />
-                  <div style={{ position: 'absolute', top: '60%', left: 0, width: '100%', borderTop: '1px dashed rgba(255,255,255,0.3)' }} />
-                  <div style={{ position: 'absolute', top: '80%', left: 0, width: '100%', borderTop: '1px dashed rgba(255,255,255,0.3)' }} />
+                  {/* Visual dividers for the 5 slices (only if not a header) */}
+                  {box.type !== 'header' && (
+                    <>
+                      <div style={{ position: 'absolute', top: '20%', left: 0, width: '100%', borderTop: '1px dashed rgba(255,255,255,0.3)' }} />
+                      <div style={{ position: 'absolute', top: '40%', left: 0, width: '100%', borderTop: '1px dashed rgba(255,255,255,0.3)' }} />
+                      <div style={{ position: 'absolute', top: '60%', left: 0, width: '100%', borderTop: '1px dashed rgba(255,255,255,0.3)' }} />
+                      <div style={{ position: 'absolute', top: '80%', left: 0, width: '100%', borderTop: '1px dashed rgba(255,255,255,0.3)' }} />
+                    </>
+                  )}
                   
                   <div 
                     className="resize-handle"
@@ -364,7 +560,7 @@ function App() {
             <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
               Resolution: {imageSize?.width}x{imageSize?.height}. Config automatically saved for <strong>{activePreset.toUpperCase()}</strong> preset.
             </p>
-            <button className="btn" style={{alignSelf: 'center'}} onClick={() => { setImageSrc(null); setBoxes([]); }}>Upload Different Image</button>
+            <button className="btn" style={{alignSelf: 'center'}} onClick={() => { setUploadedImages([]); setActiveImageId(null); setBoxes([]); }}>Clear All Uploads</button>
           </div>
         )}
       </div>
