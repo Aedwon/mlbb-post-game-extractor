@@ -7,33 +7,33 @@ import DataTable from './components/DataTable';
 const BASE_PRESETS = {
   main: [
     { id: 'battle_id', label: 'Battle ID', x: 20, y: 700, width: 250, height: 40, type: 'header' },
-    { id: 'kills', label: 'Kills', x: 10, y: 10, width: 60, height: 250 },
-    { id: 'deaths', label: 'Deaths', x: 80, y: 10, width: 60, height: 250 },
-    { id: 'assists', label: 'Assists', x: 150, y: 10, width: 60, height: 250 },
-    { id: 'gold', label: 'Gold', x: 220, y: 10, width: 80, height: 250 },
-    { id: 'rating', label: 'Rating', x: 310, y: 10, width: 60, height: 250 }
+    { id: 'kills', label: 'Kills', x: 400, y: 350, width: 40, height: 400 },
+    { id: 'deaths', label: 'Deaths', x: 450, y: 350, width: 40, height: 400 },
+    { id: 'assists', label: 'Assists', x: 500, y: 350, width: 40, height: 400 },
+    { id: 'gold', label: 'Gold', x: 550, y: 350, width: 80, height: 400 },
+    { id: 'rating', label: 'Rating', x: 650, y: 350, width: 60, height: 400 }
   ],
   dps: [
-    { id: 'hero_dmg', label: 'Hero Damage', x: 10, y: 10, width: 80, height: 250 },
-    { id: 'consec_kills', label: 'Consecutive Kills', x: 100, y: 10, width: 80, height: 250 }
+    { id: 'hero_dmg', label: 'Hero Damage', x: 400, y: 350, width: 100, height: 400 },
+    { id: 'consec_kills', label: 'Consecutive Kills', x: 550, y: 350, width: 100, height: 400 }
   ],
   team: [
-    { id: 'teamfight', label: 'Teamfight', x: 10, y: 10, width: 80, height: 250 },
-    { id: 'cc', label: 'Crowd Control', x: 100, y: 10, width: 80, height: 250 },
-    { id: 'healing', label: 'Healing/Shields', x: 190, y: 10, width: 80, height: 250 },
-    { id: 'dmg_taken', label: 'Damage Taken', x: 280, y: 10, width: 80, height: 250 }
+    { id: 'teamfight', label: 'Teamfight', x: 400, y: 350, width: 100, height: 400 },
+    { id: 'cc', label: 'Crowd Control', x: 550, y: 350, width: 100, height: 400 },
+    { id: 'healing', label: 'Healing/Shields', x: 700, y: 350, width: 100, height: 400 },
+    { id: 'dmg_taken', label: 'Damage Taken', x: 850, y: 350, width: 100, height: 400 }
   ],
   overall: [
-    { id: 'hero_dmg_ov', label: 'Hero Damage', x: 10, y: 10, width: 80, height: 250 },
-    { id: 'turret_dmg', label: 'Turret Damage', x: 100, y: 10, width: 80, height: 250 },
-    { id: 'dmg_taken_ov', label: 'Damage Taken', x: 190, y: 10, width: 80, height: 250 },
-    { id: 'teamfight_ov', label: 'Teamfight', x: 280, y: 10, width: 80, height: 250 }
+    { id: 'hero_dmg_ov', label: 'Hero Damage', x: 400, y: 350, width: 100, height: 400 },
+    { id: 'turret_dmg', label: 'Turret Damage', x: 550, y: 350, width: 100, height: 400 },
+    { id: 'dmg_taken_ov', label: 'Damage Taken', x: 700, y: 350, width: 100, height: 400 },
+    { id: 'teamfight_ov', label: 'Teamfight', x: 850, y: 350, width: 100, height: 400 }
   ],
   farm: [
-    { id: 'total_gold', label: 'Total Gold', x: 10, y: 10, width: 80, height: 250 },
-    { id: 'jungle_gold', label: 'Jungle Gold', x: 100, y: 10, width: 80, height: 250 },
-    { id: 'kill_gold', label: 'Kill Gold', x: 190, y: 10, width: 80, height: 250 },
-    { id: 'minion_gold', label: 'Minion Gold', x: 280, y: 10, width: 80, height: 250 }
+    { id: 'total_gold', label: 'Total Gold', x: 400, y: 350, width: 100, height: 400 },
+    { id: 'jungle_gold', label: 'Jungle Gold', x: 550, y: 350, width: 100, height: 400 },
+    { id: 'kill_gold', label: 'Kill Gold', x: 700, y: 350, width: 100, height: 400 },
+    { id: 'minion_gold', label: 'Minion Gold', x: 850, y: 350, width: 100, height: 400 }
   ]
 };
 
@@ -49,7 +49,7 @@ const generateDefaults = (presets) => {
         finalBoxes.push({
           ...box,
           id: box.id + '_red',
-          x: box.x + 1300,
+          x: box.x + 950, // More accurate offset for 1080p
           team: 'red'
         });
       }
@@ -78,6 +78,28 @@ const levenshtein = (a, b) => {
     }
   }
   return matrix[a.length][b.length];
+};
+
+const sanitizeOCR = (text) => {
+  // Split into potential value tokens
+  const tokens = text.split(/\s+/).filter(t => t.trim().length > 0);
+  
+  const isPercent = (t) => /%\s*$/.test(t) || /^\s*%/.test(t) || t.includes('%');
+  
+  const percentTokens = tokens.filter(isPercent);
+  const nonPercentTokens = tokens.filter(t => !isPercent(t));
+  
+  let result;
+  if (nonPercentTokens.length > 0) {
+    // If we have non-percentage values, prioritize them
+    result = nonPercentTokens.join(' ');
+  } else {
+    // If only percentages exist (like Teamfight %), keep them
+    result = tokens.join(' ');
+  }
+
+  // Keep numbers, dots, slashes, K/M multipliers, and % (if it was preserved), plus spaces
+  return result.replace(/[^0-9./KkMm%\s]/g, '').replace(/\s+/g, ' ').trim();
 };
 
 function App() {
@@ -194,6 +216,7 @@ function App() {
     canvas.height = imageSize.height;
     canvas.style.width = `${containerWidth}px`;
     canvas.style.height = `${imageSize.height * scale}px`;
+    canvas.style.display = 'block';
     
     ctx.drawImage(imageObjRef.current, 0, 0);
   }, [imageSrc, imageSize]);
@@ -240,6 +263,9 @@ function App() {
       const newWidth = Math.max(20, x - activeBox.x);
       const newHeight = Math.max(20, y - activeBox.y);
 
+      // Find the center axis of the image for symmetry mirroring
+      const centerX = imageSize.width / 2;
+
       return prev.map(b => {
         if (b.id === activeBoxId) {
           if (isDragging) return { ...b, x: newX, y: newY };
@@ -248,13 +274,24 @@ function App() {
         
         // Symmetry Lock mirroring logic
         if (symmetryLock && b.type !== 'header') {
-           const isSisterBox = 
-             (activeBox.team === 'blue' && b.id === activeBox.id + '_red') ||
-             (activeBox.team === 'red' && activeBox.id === b.id + '_red');
+           // Find the sister box: blue <-> red pairs
+           const baseId = activeBox.id.replace('_red', '');
+           const sisterBaseId = b.id.replace('_red', '');
+           const isSisterBox = (baseId === sisterBaseId) && (b.id !== activeBox.id);
              
            if (isSisterBox) {
-              if (isDragging) return { ...b, y: newY }; // Match vertical pos exactly
-              if (isResizing) return { ...b, width: newWidth, height: newHeight }; // Match size exactly
+              if (isDragging) {
+                // Mirror the x position across the center axis
+                // If blue box left edge is at distance D from center, red box left edge should be
+                // at center + (center - blueLeftEdge - blueWidth) = imageWidth - newX - activeBox.width
+                const mirroredX = imageSize.width - newX - activeBox.width;
+                return { ...b, y: newY, x: mirroredX, width: activeBox.width, height: activeBox.height };
+              }
+              if (isResizing) {
+                // Mirror the resize: keep the box anchored at its mirrored position
+                const mirroredX = imageSize.width - activeBox.x - newWidth;
+                return { ...b, width: newWidth, height: newHeight, x: mirroredX };
+              }
            }
         }
         
@@ -381,7 +418,7 @@ function App() {
                    boxId: box.id,
                    label: box.label,
                    playerIndex: 0,
-                   text: text.replace(/[^0-9./%\s]/g, '').replace(/\s+/g, ' ').trim(),
+                   text: sanitizeOCR(text),
                    imgDataUrl: offCanvas.toDataURL('image/png')
                  });
              }
@@ -419,7 +456,7 @@ function App() {
               boxId: box.id,
               label: `[${imgData.preset.toUpperCase()}] ${box.label}`,
               playerIndex,
-              text: text.replace(/[^0-9./%\s]/g, '').replace(/\s+/g, ' ').trim(),
+              text: sanitizeOCR(text),
               imgDataUrl: dataUrl
             });
           }
@@ -444,10 +481,15 @@ function App() {
       const row = { playerIndex: p };
       Object.keys(presetConfigs).forEach(preset => {
         presetConfigs[preset].forEach(box => {
+          const fieldId = box.id.replace('_red', '');
           if (box.type === 'header') {
-            row[box.id] = finalData[box.id] || '';
+            row[fieldId] = finalData[box.id] || '';
           } else {
-            row[box.id] = finalData[`${box.id}_p${p}`] || '';
+            // Merge blue and red into the same field
+            const value = finalData[`${box.id}_p${p}`];
+            if (value !== undefined) {
+              row[fieldId] = value;
+            }
           }
         });
       });
@@ -469,16 +511,16 @@ function App() {
   return (
     <div className="app-container">
       <header className="header">
-        <h1 className="title-glow">MLBB Stat Extractor</h1>
-        <p className="subtitle">Batch Upload Mode (10-Player Extraction)</p>
+        <h1 className="title-glow">MLBB <span>STAT</span> EXTRACTOR</h1>
+        <p className="subtitle">// BATCH EXTRACTION TERMINAL v2.0</p>
       </header>
 
       <div className="glass-panel">
         {uploadedImages.length === 0 ? (
           <div className="upload-area" onClick={() => document.getElementById('file-upload').click()}>
-            <Upload size={48} color="var(--color-cyan-glow)" style={{ marginBottom: '1rem' }} />
-            <h3>Upload Post-Game Screenshots</h3>
-            <p style={{ color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>Select up to 5 tabs from the same match</p>
+            <Upload size={48} style={{ marginBottom: '1.5rem', opacity: 0.8 }} />
+            <h3>INITIALIZE BATCH UPLOAD</h3>
+            <p className="subtitle" style={{ marginTop: '0.5rem' }}>Drop screenshots or click to browse</p>
             <input 
               id="file-upload" 
               type="file" 
@@ -489,9 +531,9 @@ function App() {
             />
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             {/* Batch Gallery UI */}
-            <div className="batch-gallery" style={{ display: 'flex', gap: '1rem', overflowX: 'auto', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+            <div className="batch-gallery">
               {uploadedImages.map(imgData => (
                  <div key={imgData.id} 
                       onClick={() => {
@@ -500,18 +542,28 @@ function App() {
                          setActivePreset(imgData.preset);
                          setBoxes(presetConfigs[imgData.preset]);
                       }}
-                      style={{ 
-                         cursor: 'pointer',
-                         padding: '0.5rem',
-                         border: activeImageId === imgData.id ? '2px solid var(--color-cyan-glow)' : '2px solid transparent',
-                         borderRadius: '8px',
-                         background: 'var(--color-bg-deep)',
-                         minWidth: '150px',
-                         display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'center'
-                      }}>
+                      className={`thumbnail-container ${activeImageId === imgData.id ? 'active-thumb' : ''}`}
+                 >
+                    <button 
+                       className="thumb-delete-btn"
+                       onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm("Remove this screenshot from the batch?")) {
+                             setUploadedImages(prev => prev.filter(img => img.id !== imgData.id));
+                             if (activeImageId === imgData.id) {
+                                setActiveImageId(null);
+                                setBoxes([]);
+                             }
+                          }
+                       }}
+                       title="Remove Image"
+                    >
+                       <Trash2 size={12} />
+                    </button>
                     <img src={imgData.url} alt="thumb" style={{ height: '80px', objectFit: 'contain' }} />
                     <select 
                        value={imgData.preset} 
+                       className={`thumbnail-select ${duplicateTabs.includes(imgData.preset) ? 'error' : ''}`}
                        onClick={(e) => e.stopPropagation()}
                        onChange={(e) => {
                           const val = e.target.value;
@@ -522,7 +574,6 @@ function App() {
                              setBoxes(presetConfigs[val]);
                           }
                        }}
-                       style={{ background: 'transparent', color: duplicateTabs.includes(imgData.preset) ? '#ff4a4a' : 'var(--color-gold-glow)', border: '1px solid rgba(255,255,255,0.2)', padding: '0.2rem' }}
                     >
                       <option value="main">Main Tab</option>
                       <option value="dps">DPS Tab</option>
@@ -532,31 +583,32 @@ function App() {
                     </select>
                  </div>
               ))}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', border: '2px dashed rgba(255,255,255,0.2)', borderRadius: '8px', cursor: 'pointer', minWidth: '100px' }} onClick={() => document.getElementById('file-upload').click()}>
-                 <Plus size={24} color="var(--color-text-muted)" />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', border: '1px dashed var(--color-border)', cursor: 'pointer', minWidth: '160px' }} onClick={() => document.getElementById('file-upload').click()}>
+                 <Plus size={32} color="var(--color-text-muted)" />
               </div>
             </div>
 
             {hasDuplicates && (
-              <div style={{ padding: '0.5rem', background: 'rgba(255, 74, 74, 0.2)', color: '#ff4a4a', borderRadius: '4px', textAlign: 'center' }}>
-                Warning: Duplicate tabs selected. Please assign a unique tab to each screenshot.
+              <div className="glass-panel" style={{ padding: '1rem', border: '1px solid var(--color-mlbb-red)', background: 'rgba(255, 0, 60, 0.05)', color: 'var(--color-mlbb-red)', textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
+                <span style={{ fontWeight: 'bold' }}>! CRITICAL_ERROR:</span> DUPLICATE_TABS_DETECTED // PLEASE_ASSIGN_UNIQUE_TYPES
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{color: 'var(--color-gold-glow)', fontWeight: 'bold'}}>{activePreset.toUpperCase()} TAB CONFIG</span>
-                <button className="btn btn-cyan" onClick={addBox}><Plus size={16} /> Add Box</button>
-                <button className="btn" onClick={removeBox} disabled={!activeBoxId}><Trash2 size={16} /> Remove Selected</button>
-                <button className="btn" onClick={resetConfig}><RefreshCcw size={16} /> Reset Config</button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem' }}>
+              <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span className="subtitle" style={{ fontSize: '0.8rem', color: 'var(--color-gold-glow)' }}>[ {activePreset.toUpperCase()}_CONFIGURATION ]</span>
+                <button className="btn" onClick={addBox}><Plus size={16} /> ADD_SLOT</button>
+                <button className="btn" onClick={removeBox} disabled={!activeBoxId}><Trash2 size={16} /> DELETE_ACTIVE</button>
+                <button className="btn" onClick={resetConfig}><RefreshCcw size={16} /> RESET</button>
                 
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 1rem', border: '1px solid var(--color-border)', borderRadius: '4px', color: symmetryLock ? 'var(--color-gold-glow)' : 'var(--color-text-muted)' }}>
-                  <input type="checkbox" checked={symmetryLock} onChange={(e) => setSymmetryLock(e.target.checked)} style={{ cursor: 'pointer' }} />
-                  <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Symmetry Lock</span>
+                <label className="custom-toggle">
+                  <input type="checkbox" checked={symmetryLock} onChange={(e) => setSymmetryLock(e.target.checked)} />
+                  <div className="toggle-indicator"></div>
+                  <span className="toggle-text">SYMMETRY LOCK</span>
                 </label>
               </div>
               <button className="btn btn-cyan" onClick={processOCR} disabled={isProcessing || hasDuplicates}>
-                {isProcessing ? 'Processing...' : <><Play size={16} /> Run Batch OCR (All Tabs)</>}
+                {isProcessing ? 'SCANNING...' : <><Play size={16} /> INITIALIZE BATCH OCR</>}
               </button>
             </div>
             
@@ -580,7 +632,7 @@ function App() {
                   }}
                   onMouseDown={(e) => handleMouseDown(e, box, 'move')}
                 >
-                  <div className="bounding-box-label">{box.label} {box.team === 'red' ? '(Red)' : box.team === 'blue' ? '(Blue)' : ''}</div>
+                  <div className="bounding-box-label">{box.label}</div>
                   
                   {/* Visual dividers for the 5 slices (only if not a header) */}
                   {box.type !== 'header' && (
@@ -599,10 +651,14 @@ function App() {
                 </div>
               ))}
             </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
-              Resolution: {imageSize?.width}x{imageSize?.height}. Config automatically saved for <strong>{activePreset.toUpperCase()}</strong> preset.
+            <p className="subtitle" style={{ fontSize: '0.75rem', textAlign: 'center' }}>
+              IMAGE_DIMENSIONS: {imageSize?.width}x{imageSize?.height} // AUTOSAVE_STATUS: ACTIVE
             </p>
-            <button className="btn" style={{alignSelf: 'center'}} onClick={() => { setUploadedImages([]); setActiveImageId(null); setBoxes([]); }}>Clear All Uploads</button>
+            <button className="btn" style={{ margin: '0 auto' }} onClick={() => { 
+              if (window.confirm("Are you sure you want to clear all uploads and reset the current batch?")) {
+                setUploadedImages([]); setActiveImageId(null); setBoxes([]); 
+              }
+            }}>TERMINATE BATCH</button>
           </div>
         )}
       </div>

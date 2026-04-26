@@ -4,9 +4,13 @@ import { Copy, Download } from 'lucide-react';
 export default function DataTable({ rows }) {
   if (!rows || rows.length === 0) return null;
 
-  // Derive columns from the first match's config
+  // Derive unique columns by stripping _red suffix
   const allColumns = rows[0]?.columns || [];
-  const columns = allColumns.map(b => ({ id: b.id, label: b.label }));
+  const uniqueFieldIds = Array.from(new Set(allColumns.map(b => b.id.replace('_red', ''))));
+  const columns = uniqueFieldIds.map(fieldId => {
+    const originalBox = allColumns.find(b => b.id.replace('_red', '') === fieldId);
+    return { id: fieldId, label: originalBox?.label || fieldId };
+  });
 
   const copyToClipboard = (matchId) => {
     const match = rows.find(r => r.id === matchId);
@@ -42,23 +46,22 @@ export default function DataTable({ rows }) {
 
   return (
     <div className="data-table-wrapper">
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-        <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>{rows.length} match(es) extracted (10 players each)</span>
-        <button className="btn btn-cyan" onClick={downloadCSV}><Download size={16} /> Export All to CSV</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <span className="subtitle" style={{ fontSize: '0.75rem' }}>// {rows.length} MATCH_RECORDS_INITIALIZED (10_SLOT_EXTRACTION)</span>
+        <button className="btn btn-cyan" onClick={downloadCSV}><Download size={16} /> EXPORT_ALL_CSV</button>
       </div>
       
       {rows.map((match, i) => (
-        <div key={match.id} style={{ marginBottom: '2rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-             <h4 style={{ color: 'var(--color-gold-glow)', margin: 0 }}>Match #{i + 1} ({match.timestamp})</h4>
-             <button 
-                className="btn" 
-                style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}
-                onClick={() => copyToClipboard(match.id)}
-                title="Copy Match Data (Tab-Separated)"
-              >
-                <Copy size={14} /> Copy Match
-              </button>
+        <div key={match.id} className="glass-panel" style={{ marginBottom: '3rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem' }}>
+             <h4 style={{ color: 'var(--color-gold-glow)', fontWeight: 'bold', margin: 0, fontSize: '1rem' }}>MATCH_ID: {i + 1} <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginLeft: '1rem' }}>[{match.timestamp}]</span></h4>
+              <button 
+                 className="btn" 
+                 onClick={() => copyToClipboard(match.id)}
+                 title="Copy Match Data (Tab-Separated)"
+               >
+                 <Copy size={14} /> COPY_BUFFER
+               </button>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table>
@@ -71,7 +74,7 @@ export default function DataTable({ rows }) {
               <tbody>
                 {match.data.map(player => (
                   <tr key={player.playerIndex}>
-                    <td style={{ color: 'var(--color-cyan-glow)', fontWeight: 'bold' }}>{player.playerIndex}</td>
+                    <td style={{ color: 'var(--color-mlbb-blue)', fontWeight: 'bold' }}>{player.playerIndex}</td>
                     {columns.map(col => (
                       <td key={col.id}>{player[col.id] || '-'}</td>
                     ))}

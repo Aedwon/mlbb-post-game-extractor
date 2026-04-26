@@ -22,14 +22,16 @@ export default function ReviewModal({ data, onConfirm, onCancel }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content">
-        <h2 style={{ color: 'var(--color-cyan-glow)', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between' }}>
-          <span>Verify Extracted Data</span>
-          <button style={{background: 'none', border: 'none', color: 'white', cursor: 'pointer'}} onClick={onCancel}><X size={24} /></button>
-        </h2>
+      <div className="modal-content glass-panel">
+        <header className="modal-header">
+          <h2 className="text-gold">VERIFY_EXTRACTED_DATA</h2>
+          <button className="btn-icon" onClick={onCancel}>
+            <X size={20} />
+          </button>
+        </header>
         
-        <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-          Compare the cropped image snippets with the extracted text. Correct any OCR mistakes below.
+        <p className="subtitle">
+          // Compare image snippets with OCR output. Correct discrepancies manually.
         </p>
 
         <div className="review-list">
@@ -39,7 +41,9 @@ export default function ReviewModal({ data, onConfirm, onCancel }) {
                 <img src={item.imgDataUrl} alt={item.label} />
               </div>
               <div className="review-input-group">
-                <label>P{item.playerIndex} - {item.label}</label>
+                <label className={item.playerIndex <= 5 ? "text-blue" : "text-red"}>
+                  PLAYER_{item.playerIndex} // {item.label.toUpperCase()}
+                </label>
                 <input 
                   type="text" 
                   value={editedData[item.id] || ''} 
@@ -51,9 +55,9 @@ export default function ReviewModal({ data, onConfirm, onCancel }) {
           ))}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
-          <button className="btn" onClick={onCancel}>Cancel</button>
-          <button className="btn btn-cyan" onClick={handleConfirm}><Check size={16} /> Confirm & Save</button>
+        <div className="modal-footer">
+          <button className="btn" onClick={onCancel}>DISCARD</button>
+          <button className="btn btn-cyan" onClick={handleConfirm}><Check size={16} /> COMMIT_CHANGES</button>
         </div>
       </div>
     </div>
