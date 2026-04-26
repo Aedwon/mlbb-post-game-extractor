@@ -6,6 +6,8 @@
   --color-gold-glow: #e2b714;
   --color-cyan-glow: #00f0ff;
   --color-magenta-glow: #ff0055;
+  --color-mlbb-blue: #00A3FF;
+  --color-mlbb-red: #FF3B3B;
   --color-text-primary: #f0f4f8;
   --color-text-muted: #8b9bb4;
   --color-border: rgba(226, 183, 20, 0.2);
@@ -16,6 +18,8 @@
   
   --shadow-neon-gold: 0 0 10px rgba(226, 183, 20, 0.3), 0 0 20px rgba(226, 183, 20, 0.1);
   --shadow-neon-cyan: 0 0 10px rgba(0, 240, 255, 0.3), 0 0 20px rgba(0, 240, 255, 0.1);
+  --shadow-neon-blue: 0 0 10px rgba(0, 163, 255, 0.3), 0 0 20px rgba(0, 163, 255, 0.1);
+  --shadow-neon-red: 0 0 10px rgba(255, 59, 59, 0.3), 0 0 20px rgba(255, 59, 59, 0.1);
 }
 
 * {
@@ -166,12 +170,23 @@ h1, h2, h3, h4, h5, h6 {
 
 .bounding-box {
   position: absolute;
-  border: 2px solid var(--color-cyan-glow);
-  background: rgba(0, 240, 255, 0.1);
+  border: 2px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.05);
   cursor: grab;
-  box-shadow: var(--shadow-neon-cyan);
   display: flex;
   flex-direction: column;
+}
+
+.bounding-box.team-blue {
+  border-color: var(--color-mlbb-blue);
+  background: rgba(0, 163, 255, 0.1);
+  box-shadow: var(--shadow-neon-blue);
+}
+
+.bounding-box.team-red {
+  border-color: var(--color-mlbb-red);
+  background: rgba(255, 59, 59, 0.1);
+  box-shadow: var(--shadow-neon-red);
 }
 
 .bounding-box:active {
@@ -193,7 +208,7 @@ h1, h2, h3, h4, h5, h6 {
   position: absolute;
   top: -24px;
   left: -2px;
-  background: var(--color-cyan-glow);
+  background: var(--color-border);
   color: #000;
   font-size: 10px;
   font-weight: bold;
@@ -205,16 +220,22 @@ h1, h2, h3, h4, h5, h6 {
   pointer-events: none;
 }
 
+.bounding-box.team-blue .bounding-box-label { background: var(--color-mlbb-blue); }
+.bounding-box.team-red .bounding-box-label { background: var(--color-mlbb-red); }
+
 .resize-handle {
   position: absolute;
   width: 12px;
   height: 12px;
-  background: var(--color-cyan-glow);
+  background: var(--color-border);
   border-radius: 50%;
   bottom: -6px;
   right: -6px;
   cursor: se-resize;
 }
+
+.bounding-box.team-blue .resize-handle { background: var(--color-mlbb-blue); }
+.bounding-box.team-red .resize-handle { background: var(--color-mlbb-red); }
 
 .bounding-box.active .resize-handle {
   background: var(--color-gold-glow);

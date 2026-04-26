@@ -4,7 +4,7 @@ import Tesseract from 'tesseract.js';
 import ReviewModal from './components/ReviewModal';
 import DataTable from './components/DataTable';
 
-const PRESET_DEFAULTS = {
+const BASE_PRESETS = {
   main: [
     { id: 'battle_id', label: 'Battle ID', x: 20, y: 700, width: 250, height: 40, type: 'header' },
     { id: 'kills', label: 'Kills', x: 10, y: 10, width: 60, height: 250 },
@@ -36,6 +36,30 @@ const PRESET_DEFAULTS = {
     { id: 'minion_gold', label: 'Minion Gold', x: 280, y: 10, width: 80, height: 250 }
   ]
 };
+
+const generateDefaults = (presets) => {
+  const result = {};
+  for (const [presetName, boxes] of Object.entries(presets)) {
+    const finalBoxes = [];
+    for (const box of boxes) {
+      if (box.type === 'header') {
+        finalBoxes.push(box);
+      } else {
+        finalBoxes.push({ ...box, team: 'blue' });
+        finalBoxes.push({
+          ...box,
+          id: box.id + '_red',
+          x: box.x + 1300,
+          team: 'red'
+        });
+      }
+    }
+    result[presetName] = finalBoxes;
+  }
+  return result;
+};
+
+const PRESET_DEFAULTS = generateDefaults(BASE_PRESETS);
 
 const levenshtein = (a, b) => {
   if (a.length === 0) return b.length;
@@ -75,6 +99,7 @@ function App() {
   const [reviewData, setReviewData] = useState(null);
   const [savedRows, setSavedRows] = useState([]);
   const [activePreset, setActivePreset] = useState('main');
+  const [symmetryLock, setSymmetryLock] = useState(true);
   
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -206,25 +231,37 @@ function App() {
     const x = (e.clientX - rect.left) / displayScale;
     const y = (e.clientY - rect.top) / displayScale;
     
-    setBoxes(prev => prev.map(b => {
-      if (b.id !== activeBoxId) return b;
+    setBoxes(prev => {
+      const activeBox = prev.find(b => b.id === activeBoxId);
+      if (!activeBox) return prev;
       
-      if (isDragging) {
-        return {
-          ...b,
-          x: Math.max(0, Math.min(x - dragOffset.x, imageSize.width - b.width)),
-          y: Math.max(0, Math.min(y - dragOffset.y, imageSize.height - b.height))
-        };
-      } else if (isResizing) {
-        return {
-          ...b,
-          width: Math.max(20, x - b.x),
-          height: Math.max(20, y - b.y)
-        };
-      }
-      return b;
-    }));
-  }, [isDragging, isResizing, activeBoxId, displayScale, dragOffset, imageSize]);
+      const newX = Math.max(0, Math.min(x - dragOffset.x, imageSize.width - activeBox.width));
+      const newY = Math.max(0, Math.min(y - dragOffset.y, imageSize.height - activeBox.height));
+      const newWidth = Math.max(20, x - activeBox.x);
+      const newHeight = Math.max(20, y - activeBox.y);
+
+      return prev.map(b => {
+        if (b.id === activeBoxId) {
+          if (isDragging) return { ...b, x: newX, y: newY };
+          if (isResizing) return { ...b, width: newWidth, height: newHeight };
+        }
+        
+        // Symmetry Lock mirroring logic
+        if (symmetryLock && b.type !== 'header') {
+           const isSisterBox = 
+             (activeBox.team === 'blue' && b.id === activeBox.id + '_red') ||
+             (activeBox.team === 'red' && activeBox.id === b.id + '_red');
+             
+           if (isSisterBox) {
+              if (isDragging) return { ...b, y: newY }; // Match vertical pos exactly
+              if (isResizing) return { ...b, width: newWidth, height: newHeight }; // Match size exactly
+           }
+        }
+        
+        return b;
+      });
+    });
+  }, [isDragging, isResizing, activeBoxId, displayScale, dragOffset, imageSize, symmetryLock]);
 
   const handleMouseUp = () => {
     setIsDragging(false);
@@ -344,7 +381,7 @@ function App() {
                    boxId: box.id,
                    label: box.label,
                    playerIndex: 0,
-                   text: text.trim().replace(/[^0-9./%]/g, ''),
+                   text: text.replace(/[^0-9./%\s]/g, '').replace(/\s+/g, ' ').trim(),
                    imgDataUrl: offCanvas.toDataURL('image/png')
                  });
              }
@@ -382,7 +419,7 @@ function App() {
               boxId: box.id,
               label: `[${imgData.preset.toUpperCase()}] ${box.label}`,
               playerIndex,
-              text: text.trim().replace(/[^0-9./%]/g, ''),
+              text: text.replace(/[^0-9./%\s]/g, '').replace(/\s+/g, ' ').trim(),
               imgDataUrl: dataUrl
             });
           }
@@ -512,9 +549,14 @@ function App() {
                 <button className="btn btn-cyan" onClick={addBox}><Plus size={16} /> Add Box</button>
                 <button className="btn" onClick={removeBox} disabled={!activeBoxId}><Trash2 size={16} /> Remove Selected</button>
                 <button className="btn" onClick={resetConfig}><RefreshCcw size={16} /> Reset Config</button>
+                
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 1rem', border: '1px solid var(--color-border)', borderRadius: '4px', color: symmetryLock ? 'var(--color-gold-glow)' : 'var(--color-text-muted)' }}>
+                  <input type="checkbox" checked={symmetryLock} onChange={(e) => setSymmetryLock(e.target.checked)} style={{ cursor: 'pointer' }} />
+                  <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Symmetry Lock</span>
+                </label>
               </div>
               <button className="btn btn-cyan" onClick={processOCR} disabled={isProcessing || hasDuplicates}>
-                {isProcessing ? 'Processing...' : <><Play size={16} /> Run OCR on Active Image</>}
+                {isProcessing ? 'Processing...' : <><Play size={16} /> Run Batch OCR (All Tabs)</>}
               </button>
             </div>
             
@@ -529,7 +571,7 @@ function App() {
               {boxes.map((box) => (
                 <div
                   key={box.id}
-                  className={`bounding-box ${activeBoxId === box.id ? 'active' : ''}`}
+                  className={`bounding-box ${activeBoxId === box.id ? 'active' : ''} ${box.team === 'blue' ? 'team-blue' : box.team === 'red' ? 'team-red' : ''}`}
                   style={{
                     left: `${box.x * displayScale}px`,
                     top: `${box.y * displayScale}px`,
@@ -538,7 +580,7 @@ function App() {
                   }}
                   onMouseDown={(e) => handleMouseDown(e, box, 'move')}
                 >
-                  <div className="bounding-box-label">{box.label}</div>
+                  <div className="bounding-box-label">{box.label} {box.team === 'red' ? '(Red)' : box.team === 'blue' ? '(Blue)' : ''}</div>
                   
                   {/* Visual dividers for the 5 slices (only if not a header) */}
                   {box.type !== 'header' && (
