@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Plus, Play, Download, Copy, Trash2, Crosshair, X, RefreshCcw } from 'lucide-react';
+import { Upload, Plus, Play, Download, Copy, Trash2, Crosshair, X, RefreshCcw, GripVertical } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import ReviewModal from './components/ReviewModal';
 import DataTable from './components/DataTable';
+import { useDragReorder } from './hooks/useDragReorder';
+
+// Default reference width for mirroring (typical MLBB screenshot)
+const DEFAULT_IMG_WIDTH = 1920;
 
 const BASE_PRESETS = {
   main: [
@@ -24,10 +28,10 @@ const BASE_PRESETS = {
     { id: 'dmg_taken', label: 'Damage Taken', x: 850, y: 350, width: 100, height: 400 }
   ],
   overall: [
-    { id: 'hero_dmg_ov', label: 'Hero Damage', x: 400, y: 350, width: 100, height: 400 },
+    { id: 'hero_dmg_ov', label: 'Overall Hero Dmg', x: 400, y: 350, width: 100, height: 400 },
     { id: 'turret_dmg', label: 'Turret Damage', x: 550, y: 350, width: 100, height: 400 },
-    { id: 'dmg_taken_ov', label: 'Damage Taken', x: 700, y: 350, width: 100, height: 400 },
-    { id: 'teamfight_ov', label: 'Teamfight', x: 850, y: 350, width: 100, height: 400 }
+    { id: 'dmg_taken_ov', label: 'Overall Dmg Taken', x: 700, y: 350, width: 100, height: 400 },
+    { id: 'teamfight_ov', label: 'Overall Teamfight', x: 850, y: 350, width: 100, height: 400 }
   ],
   farm: [
     { id: 'total_gold', label: 'Total Gold', x: 400, y: 350, width: 100, height: 400 },
@@ -37,7 +41,7 @@ const BASE_PRESETS = {
   ]
 };
 
-const generateDefaults = (presets) => {
+const generateDefaults = (presets, imgWidth = DEFAULT_IMG_WIDTH) => {
   const result = {};
   for (const [presetName, boxes] of Object.entries(presets)) {
     const finalBoxes = [];
@@ -46,10 +50,13 @@ const generateDefaults = (presets) => {
         finalBoxes.push(box);
       } else {
         finalBoxes.push({ ...box, team: 'blue' });
+        // Mirror the x-position across the image center axis.
+        // In MLBB, the red team's columns are in reverse order (mirrored).
+        const mirroredX = imgWidth - box.x - box.width;
         finalBoxes.push({
           ...box,
           id: box.id + '_red',
-          x: box.x + 950, // More accurate offset for 1080p
+          x: mirroredX,
           team: 'red'
         });
       }
@@ -126,6 +133,27 @@ function App() {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const imageObjRef = useRef(null);
+
+  // Drag-to-reorder for batch gallery thumbnails (purely visual)
+  const {
+    isDragging: isThumbDragging,
+    dragIndex: thumbDragIndex,
+    overIndex: thumbOverIndex,
+    ghost: thumbGhost,
+    setItemRef: setThumbRef,
+    getItemStyle: getThumbStyle,
+    getItemProps: getThumbDragProps,
+  } = useDragReorder({
+    itemCount: uploadedImages.length,
+    onReorder: (fromIndex, toIndex) => {
+      setUploadedImages(prev => {
+        const next = [...prev];
+        const [item] = next.splice(fromIndex, 1);
+        next.splice(toIndex, 0, item);
+        return next;
+      });
+    },
+  });
 
   useEffect(() => {
     if (activeImgData) {
@@ -342,6 +370,10 @@ function App() {
     if (!imageObjRef.current || boxes.length === 0 || uploadedImages.length === 0) return;
     setIsProcessing(true);
     
+    // Sync the current preset's boxes into presetConfigs before processing
+    const currentConfigs = { ...presetConfigs, [activePreset]: boxes };
+    setPresetConfigs(currentConfigs);
+    
     const results = [];
     
     try {
@@ -351,7 +383,7 @@ function App() {
       });
 
       // --- Battle ID Verification Pass ---
-      const mainConfig = activePreset === 'main' ? boxes : presetConfigs.main;
+      const mainConfig = activePreset === 'main' ? boxes : currentConfigs.main;
       const battleIdBox = mainConfig.find(b => b.id === 'battle_id');
       
       if (battleIdBox) {
@@ -392,7 +424,7 @@ function App() {
       const allResults = [];
 
       for (const imgData of uploadedImages) {
-        const configBoxes = presetConfigs[imgData.preset];
+        const configBoxes = currentConfigs[imgData.preset];
         if (!configBoxes || configBoxes.length === 0) continue;
 
         for (const box of configBoxes) {
@@ -533,17 +565,25 @@ function App() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             {/* Batch Gallery UI */}
-            <div className="batch-gallery">
-              {uploadedImages.map(imgData => (
-                 <div key={imgData.id} 
+            <div className={`batch-gallery ${isThumbDragging ? 'is-reordering' : ''}`}>
+              {uploadedImages.map((imgData, idx) => (
+                 <div key={imgData.id}
+                      ref={(el) => setThumbRef(idx, el)}
                       onClick={() => {
+                         // Only fire click if not dragging
+                         if (isThumbDragging) return;
                          setPresetConfigs(prev => ({ ...prev, [activePreset]: boxes }));
                          setActiveImageId(imgData.id);
                          setActivePreset(imgData.preset);
                          setBoxes(presetConfigs[imgData.preset]);
                       }}
-                      className={`thumbnail-container ${activeImageId === imgData.id ? 'active-thumb' : ''}`}
+                      className={`thumbnail-container ${activeImageId === imgData.id ? 'active-thumb' : ''} ${thumbDragIndex === idx ? 'drag-placeholder' : ''}`}
+                      style={getThumbStyle(idx)}
+                      {...getThumbDragProps(idx)}
                  >
+                    <div className="thumb-drag-handle" title="Drag to reorder">
+                       <GripVertical size={14} />
+                    </div>
                     <button 
                        className="thumb-delete-btn"
                        onClick={(e) => {
@@ -560,7 +600,7 @@ function App() {
                     >
                        <Trash2 size={12} />
                     </button>
-                    <img src={imgData.url} alt="thumb" style={{ height: '80px', objectFit: 'contain' }} />
+                    <img src={imgData.url} alt="thumb" style={{ height: '80px', objectFit: 'contain', pointerEvents: 'none' }} />
                     <select 
                        value={imgData.preset} 
                        className={`thumbnail-select ${duplicateTabs.includes(imgData.preset) ? 'error' : ''}`}
@@ -587,6 +627,22 @@ function App() {
                  <Plus size={32} color="var(--color-text-muted)" />
               </div>
             </div>
+
+            {/* Drag ghost overlay */}
+            {isThumbDragging && thumbDragIndex !== -1 && uploadedImages[thumbDragIndex] && (
+              <div
+                className="drag-ghost"
+                style={{
+                  left: `${thumbGhost.x}px`,
+                  top: `${thumbGhost.y}px`,
+                  width: `${thumbGhost.width}px`,
+                  height: `${thumbGhost.height}px`,
+                }}
+              >
+                <img src={uploadedImages[thumbDragIndex].url} alt="drag" style={{ height: '80px', objectFit: 'contain', pointerEvents: 'none' }} />
+                <span className="drag-ghost-label">{uploadedImages[thumbDragIndex].preset.toUpperCase()} TAB</span>
+              </div>
+            )}
 
             {hasDuplicates && (
               <div className="glass-panel" style={{ padding: '1rem', border: '1px solid var(--color-mlbb-red)', background: 'rgba(255, 0, 60, 0.05)', color: 'var(--color-mlbb-red)', textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>

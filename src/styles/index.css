@@ -507,6 +507,88 @@ tr:hover td {
   color: var(--color-mlbb-red);
 }
 
+/* ---- Drag-to-Reorder ---- */
+
+/* Drag handle grip icon */
+.thumb-drag-handle {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  color: var(--color-text-muted);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 0.2s, color 0.2s;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  touch-action: none;
+}
+.thumbnail-container:hover .thumb-drag-handle {
+  opacity: 0.6;
+}
+.thumb-drag-handle:hover {
+  opacity: 1 !important;
+  color: var(--color-mlbb-blue);
+}
+.thumb-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Placeholder left behind during drag */
+.thumbnail-container.drag-placeholder {
+  opacity: 0.25;
+  border-style: dashed;
+  border-color: var(--color-mlbb-blue);
+  pointer-events: none;
+}
+.thumbnail-container.drag-placeholder .thumb-delete-btn,
+.thumbnail-container.drag-placeholder .thumb-drag-handle {
+  display: none;
+}
+
+/* Floating ghost that follows the pointer */
+.drag-ghost {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--color-bg-deep);
+  border: 1px solid var(--color-mlbb-blue);
+  box-shadow:
+    0 0 20px rgba(0, 240, 255, 0.3),
+    0 0 40px rgba(0, 240, 255, 0.1),
+    0 12px 30px rgba(0, 0, 0, 0.6);
+  transform: scale(1.05) rotate(1deg);
+  opacity: 0.92;
+  will-change: left, top;
+}
+.drag-ghost-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-mlbb-blue);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Gallery state while dragging */
+.batch-gallery.is-reordering {
+  cursor: grabbing;
+  overflow-x: hidden; /* prevent scrollbar flicker during drag */
+}
+.batch-gallery.is-reordering .thumbnail-container:not(.drag-placeholder) {
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+.batch-gallery.is-reordering .thumbnail-container:not(.drag-placeholder):hover {
+  transform: none; /* disable hover lift during drag */
+}
+
 /* Custom Checkbox / Toggle */
 .custom-toggle {
   display: flex;
