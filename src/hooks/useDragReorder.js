@@ -3,13 +3,10 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 const DEAD_ZONE_PX = 5;
 
 /**
- * Custom hook for drag-to-reorder in a horizontal list.
- * Uses Pointer Events for unified mouse + touch support.
- *
- * @param {Object} opts
- * @param {number} opts.itemCount - Number of draggable items
- * @param {Function} opts.onReorder - (fromIndex, toIndex) => void
- * @returns drag state and prop-getters for items
+ * Drag-to-reorder hook using global window listeners for robustness.
+ * Pointer Events for unified mouse + touch. Ghost coordinates are
+ * viewport-relative (caller should render via portal or outside any
+ * ancestor with backdrop-filter / transform).
  */
 export function useDragReorder({ itemCount, onReorder }) {
   const [dragIndex, setDragIndex] = useState(-1);
@@ -18,204 +15,176 @@ export function useDragReorder({ itemCount, onReorder }) {
 
   const isDragging = dragIndex !== -1;
 
-  // Mutable ref for high-frequency tracking without re-renders
-  const internals = useRef({
+  // Mutable tracking state (no re-renders)
+  const s = useRef({
     pointerId: null,
     startX: 0,
     startY: 0,
     activated: false,
     dragIndex: -1,
+    overIndex: -1,
     offsetX: 0,
     offsetY: 0,
-    originalRects: [],  // captured on drag start
-    itemWidth: 0,       // width of dragged item (for shift calc)
+    originalRects: [],
+    itemWidth: 0,
   });
 
-  // Store item DOM refs
+  // Latest props, accessible to stable handlers
+  const propsRef = useRef({ onReorder, itemCount });
+  propsRef.current = { onReorder, itemCount };
+
   const itemElsRef = useRef([]);
+  const justDraggedRef = useRef(false);
 
   const setItemRef = useCallback((index, el) => {
     if (el) itemElsRef.current[index] = el;
   }, []);
 
-  // ---- Pointer Handlers ----
+  // ---- Stable global handlers (defined once via ref) ----
+  const h = useRef(null);
 
-  const handlePointerDown = useCallback((index, e) => {
-    // Don't drag from interactive children
-    if (e.target.closest('button, select, input, textarea, a')) return;
-    if (e.button !== 0) return;       // primary button only
-    if (itemCount < 2) return;        // nothing to reorder
+  if (!h.current) {
+    const removeListeners = () => {
+      window.removeEventListener('pointermove', h.current.onMove);
+      window.removeEventListener('pointerup', h.current.onUp);
+      window.removeEventListener('pointercancel', h.current.onCancel);
+      window.removeEventListener('blur', h.current.onBlur);
+      window.removeEventListener('contextmenu', h.current.onCtx);
+      document.removeEventListener('visibilitychange', h.current.onVis);
+    };
 
-    const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
+    const cancel = () => {
+      if (s.current.activated) {
+        justDraggedRef.current = true;
+        requestAnimationFrame(() => { justDraggedRef.current = false; });
+      }
+      s.current.pointerId = null;
+      s.current.activated = false;
+      s.current.dragIndex = -1;
+      s.current.overIndex = -1;
+      setDragIndex(-1);
+      setOverIndex(-1);
+      document.body.style.userSelect = '';
+      document.body.style.touchAction = '';
+      removeListeners();
+    };
 
-    internals.current.pointerId = e.pointerId;
-    internals.current.startX = e.clientX;
-    internals.current.startY = e.clientY;
-    internals.current.activated = false;
-    internals.current.dragIndex = index;
-  }, [itemCount]);
+    const onMove = (e) => {
+      const st = s.current;
+      if (st.dragIndex === -1) return;
 
-  const handlePointerMove = useCallback((index, e) => {
-    const d = internals.current;
-    if (d.pointerId !== e.pointerId || d.dragIndex !== index) return;
+      // --- Dead zone check (pre-activation) ---
+      if (!st.activated) {
+        const dx = e.clientX - st.startX;
+        const dy = e.clientY - st.startY;
+        if (Math.abs(dx) < DEAD_ZONE_PX && Math.abs(dy) < DEAD_ZONE_PX) return;
 
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
+        // Activate
+        st.activated = true;
+        const idx = st.dragIndex;
 
-    if (!d.activated) {
-      if (Math.abs(dx) < DEAD_ZONE_PX && Math.abs(dy) < DEAD_ZONE_PX) return;
+        st.originalRects = itemElsRef.current
+          .slice(0, propsRef.current.itemCount)
+          .map(el => el?.getBoundingClientRect() ?? null);
 
-      // ---- Activate drag ----
-      d.activated = true;
+        const rect = st.originalRects[idx];
+        if (!rect) { cancel(); return; }
 
-      // Snapshot all item rects before anything moves
-      d.originalRects = itemElsRef.current
-        .slice(0, itemCount)
-        .map(el => el?.getBoundingClientRect() ?? null);
+        st.offsetX = e.clientX - rect.left;
+        st.offsetY = e.clientY - rect.top;
+        st.itemWidth = rect.width;
+        st.overIndex = idx;
 
-      const draggedRect = d.originalRects[index];
-      if (!draggedRect) return;
+        setDragIndex(idx);
+        setOverIndex(idx);
+        setGhost({ x: e.clientX - st.offsetX, y: e.clientY - st.offsetY, width: rect.width, height: rect.height });
 
-      d.offsetX = e.clientX - draggedRect.left;
-      d.offsetY = e.clientY - draggedRect.top;
-      d.itemWidth = draggedRect.width;
+        document.body.style.userSelect = 'none';
+        document.body.style.touchAction = 'none';
+        return;
+      }
 
-      setDragIndex(index);
-      setOverIndex(index);
+      // --- Active drag: update ghost + overIndex ---
       setGhost({
-        x: e.clientX - d.offsetX,
-        y: e.clientY - d.offsetY,
-        width: draggedRect.width,
-        height: draggedRect.height,
+        x: e.clientX - st.offsetX,
+        y: e.clientY - st.offsetY,
+        width: st.originalRects[st.dragIndex]?.width ?? 0,
+        height: st.originalRects[st.dragIndex]?.height ?? 0,
       });
 
-      // Prevent scrolling & text selection during drag
-      document.body.style.userSelect = 'none';
-      document.body.style.touchAction = 'none';
-      return;
-    }
-
-    // ---- Dragging: update ghost + calculate overIndex ----
-    setGhost({
-      x: e.clientX - d.offsetX,
-      y: e.clientY - d.offsetY,
-      width: d.originalRects[index]?.width ?? 0,
-      height: d.originalRects[index]?.height ?? 0,
-    });
-
-    // Determine drop target by comparing pointer X to original midpoints
-    const pointerX = e.clientX;
-    let newOver = d.dragIndex;
-
-    for (let i = 0; i < d.originalRects.length; i++) {
-      const rect = d.originalRects[i];
-      if (!rect) continue;
-      const mid = rect.left + rect.width / 2;
-
-      if (i < d.dragIndex && pointerX < mid) {
-        newOver = i;
-        break;
+      const px = e.clientX;
+      let newOver = st.dragIndex;
+      for (let i = 0; i < st.originalRects.length; i++) {
+        const r = st.originalRects[i];
+        if (!r) continue;
+        const mid = r.left + r.width / 2;
+        if (i < st.dragIndex && px < mid) { newOver = i; break; }
+        if (i > st.dragIndex && px > mid) { newOver = i; }
       }
-      if (i > d.dragIndex && pointerX > mid) {
-        newOver = i;
+      st.overIndex = newOver;
+      setOverIndex(newOver);
+    };
+
+    const onUp = () => {
+      const st = s.current;
+      if (st.activated && st.dragIndex !== -1 && st.overIndex !== -1 && st.overIndex !== st.dragIndex) {
+        propsRef.current.onReorder(st.dragIndex, st.overIndex);
       }
-    }
+      cancel();
+    };
 
-    setOverIndex(newOver);
-  }, [itemCount]);
+    const onCancel = () => cancel();
+    const onBlur = () => cancel();
+    const onCtx = () => cancel();
+    const onVis = () => { if (document.hidden) cancel(); };
 
-  const handlePointerUp = useCallback((index, e) => {
-    const d = internals.current;
-    if (d.pointerId !== e.pointerId || d.dragIndex !== index) return;
+    h.current = { cancel, onMove, onUp, onCancel, onBlur, onCtx, onVis, removeListeners };
+  }
 
-    if (d.activated && d.dragIndex !== -1) {
-      // Commit the reorder
-      setOverIndex(currentOver => {
-        if (currentOver !== -1 && currentOver !== d.dragIndex) {
-          onReorder(d.dragIndex, currentOver);
-        }
-        return -1;
-      });
-    }
+  // Cleanup on unmount
+  useEffect(() => () => h.current.cancel(), []);
 
-    // Reset everything
-    d.pointerId = null;
-    d.activated = false;
-    d.dragIndex = -1;
-    setDragIndex(-1);
-    setOverIndex(-1);
+  // ---- Per-item pointerdown ----
+  const handlePointerDown = useCallback((index, e) => {
+    if (e.target.closest('button, select, input, textarea, a')) return;
+    if (e.button !== 0) return;
+    if (propsRef.current.itemCount < 2) return;
+    if (s.current.activated) return; // already dragging
 
-    document.body.style.userSelect = '';
-    document.body.style.touchAction = '';
-  }, [onReorder]);
+    s.current.pointerId = e.pointerId;
+    s.current.startX = e.clientX;
+    s.current.startY = e.clientY;
+    s.current.activated = false;
+    s.current.dragIndex = index;
 
-  const handlePointerCancel = useCallback((index, e) => {
-    const d = internals.current;
-    if (d.pointerId !== e.pointerId) return;
-
-    d.pointerId = null;
-    d.activated = false;
-    d.dragIndex = -1;
-    setDragIndex(-1);
-    setOverIndex(-1);
-    document.body.style.userSelect = '';
-    document.body.style.touchAction = '';
+    // Global listeners for tracking (robust: works even if pointer leaves element)
+    window.addEventListener('pointermove', h.current.onMove);
+    window.addEventListener('pointerup', h.current.onUp);
+    window.addEventListener('pointercancel', h.current.onCancel);
+    window.addEventListener('blur', h.current.onBlur);
+    window.addEventListener('contextmenu', h.current.onCtx);
+    document.addEventListener('visibilitychange', h.current.onVis);
   }, []);
 
   // ---- Prop getters ----
-
-  /**
-   * Returns the inline style for an item at `index` during drag.
-   * Shifts items to visually "make space" for the drop.
-   */
   const getItemStyle = useCallback((index) => {
     if (dragIndex === -1) return {};
+    if (index === dragIndex) return { opacity: 0.25, pointerEvents: 'none' };
 
-    // The dragged item becomes a placeholder
-    if (index === dragIndex) {
-      return {
-        opacity: 0.25,
-        pointerEvents: 'none',
-      };
+    const shiftPx = (s.current.itemWidth || 0) + 24;
+
+    if (dragIndex < overIndex && index > dragIndex && index <= overIndex) {
+      return { transform: `translateX(-${shiftPx}px)`, transition: 'transform 0.25s cubic-bezier(0.2,0,0,1)' };
     }
-
-    // Shift items between dragIndex and overIndex
-    const d = internals.current;
-    const shiftPx = (d.itemWidth || 0) + 24; // item width + gap (1.5rem ≈ 24px)
-
-    if (dragIndex < overIndex) {
-      // Dragging right: items between (dragIndex, overIndex] shift left
-      if (index > dragIndex && index <= overIndex) {
-        return { transform: `translateX(-${shiftPx}px)`, transition: 'transform 0.25s cubic-bezier(0.2, 0, 0, 1)' };
-      }
-    } else if (dragIndex > overIndex) {
-      // Dragging left: items between [overIndex, dragIndex) shift right
-      if (index >= overIndex && index < dragIndex) {
-        return { transform: `translateX(${shiftPx}px)`, transition: 'transform 0.25s cubic-bezier(0.2, 0, 0, 1)' };
-      }
+    if (dragIndex > overIndex && index >= overIndex && index < dragIndex) {
+      return { transform: `translateX(${shiftPx}px)`, transition: 'transform 0.25s cubic-bezier(0.2,0,0,1)' };
     }
-
-    return { transition: 'transform 0.25s cubic-bezier(0.2, 0, 0, 1)' };
+    return { transition: 'transform 0.25s cubic-bezier(0.2,0,0,1)' };
   }, [dragIndex, overIndex]);
 
-  /**
-   * Returns event handler props to spread on each draggable item.
-   */
   const getItemProps = useCallback((index) => ({
     onPointerDown: (e) => handlePointerDown(index, e),
-    onPointerMove: (e) => handlePointerMove(index, e),
-    onPointerUp: (e) => handlePointerUp(index, e),
-    onPointerCancel: (e) => handlePointerCancel(index, e),
-  }), [handlePointerDown, handlePointerMove, handlePointerUp, handlePointerCancel]);
+  }), [handlePointerDown]);
 
-  return {
-    isDragging,
-    dragIndex,
-    overIndex,
-    ghost,
-    setItemRef,
-    getItemStyle,
-    getItemProps,
-  };
+  return { isDragging, dragIndex, overIndex, ghost, setItemRef, getItemStyle, getItemProps, justDraggedRef };
 }

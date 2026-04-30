@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Upload, Plus, Play, Download, Copy, Trash2, Crosshair, X, RefreshCcw, GripVertical } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import ReviewModal from './components/ReviewModal';
@@ -41,26 +42,70 @@ const BASE_PRESETS = {
   ]
 };
 
+// In MLBB, the red side keeps the SAME column order as blue (not reversed),
+// except on the Main tab where Gold moves to the leftmost position.
+// This map defines the red-side column order for tabs that differ from blue.
+const RED_COLUMN_ORDER = {
+  main: ['gold', 'kills', 'deaths', 'assists', 'rating'],
+};
+
 const generateDefaults = (presets, imgWidth = DEFAULT_IMG_WIDTH) => {
   const result = {};
   for (const [presetName, boxes] of Object.entries(presets)) {
     const finalBoxes = [];
-    for (const box of boxes) {
-      if (box.type === 'header') {
-        finalBoxes.push(box);
-      } else {
-        finalBoxes.push({ ...box, team: 'blue' });
-        // Mirror the x-position across the image center axis.
-        // In MLBB, the red team's columns are in reverse order (mirrored).
-        const mirroredX = imgWidth - box.x - box.width;
+    const headers = boxes.filter(b => b.type === 'header');
+    const columns = boxes.filter(b => b.type !== 'header');
+
+    headers.forEach(h => finalBoxes.push(h));
+
+    if (columns.length === 0) {
+      result[presetName] = finalBoxes;
+      continue;
+    }
+
+    // Add blue boxes
+    columns.forEach(box => finalBoxes.push({ ...box, team: 'blue' }));
+
+    // Calculate red-side group position:
+    // Mirror the blue group as a whole, preserving internal column order.
+    const minX = Math.min(...columns.map(b => b.x));
+    const maxXEdge = Math.max(...columns.map(b => b.x + b.width));
+    const redGroupStart = imgWidth - maxXEdge;
+
+    const redOrder = RED_COLUMN_ORDER[presetName];
+
+    if (redOrder) {
+      // Custom red-side column order (e.g. Main tab: Gold moves to front)
+      // Lay out red columns sequentially using blue column spacings
+      const sortedBlue = [...columns].sort((a, b) => a.x - b.x);
+      for (let i = 0; i < redOrder.length; i++) {
+        const redId = redOrder[i];
+        const blueBox = columns.find(b => b.id === redId);
+        if (!blueBox) continue;
+        // Use the i-th position slot from the blue layout
+        const slot = sortedBlue[i];
+        const redX = redGroupStart + (slot.x - minX);
+        finalBoxes.push({
+          ...blueBox,
+          id: blueBox.id + '_red',
+          x: redX,
+          width: slot.width,
+          team: 'red'
+        });
+      }
+    } else {
+      // Default: same column order, group-mirrored to right half
+      for (const box of columns) {
+        const offsetInGroup = box.x - minX;
         finalBoxes.push({
           ...box,
           id: box.id + '_red',
-          x: mirroredX,
+          x: redGroupStart + offsetInGroup,
           team: 'red'
         });
       }
     }
+
     result[presetName] = finalBoxes;
   }
   return result;
@@ -143,6 +188,7 @@ function App() {
     setItemRef: setThumbRef,
     getItemStyle: getThumbStyle,
     getItemProps: getThumbDragProps,
+    justDraggedRef,
   } = useDragReorder({
     itemCount: uploadedImages.length,
     onReorder: (fromIndex, toIndex) => {
@@ -308,19 +354,18 @@ function App() {
            const isSisterBox = (baseId === sisterBaseId) && (b.id !== activeBox.id);
              
            if (isSisterBox) {
-              if (isDragging) {
-                // Mirror the x position across the center axis
-                // If blue box left edge is at distance D from center, red box left edge should be
-                // at center + (center - blueLeftEdge - blueWidth) = imageWidth - newX - activeBox.width
-                const mirroredX = imageSize.width - newX - activeBox.width;
-                return { ...b, y: newY, x: mirroredX, width: activeBox.width, height: activeBox.height };
-              }
-              if (isResizing) {
-                // Mirror the resize: keep the box anchored at its mirrored position
-                const mirroredX = imageSize.width - activeBox.x - newWidth;
-                return { ...b, width: newWidth, height: newHeight, x: mirroredX };
-              }
-           }
+               if (isDragging) {
+                 // Delta-based mirroring: move sister box by opposite X delta, same Y
+                 const deltaX = newX - activeBox.x;
+                 const mirroredX = Math.max(0, Math.min(b.x - deltaX, imageSize.width - b.width));
+                 return { ...b, y: newY, x: mirroredX };
+               }
+               if (isResizing) {
+                 // Same dimensions, adjust x to grow toward center (opposite direction)
+                 const widthDelta = newWidth - activeBox.width;
+                 return { ...b, width: newWidth, height: newHeight, x: b.x - widthDelta };
+               }
+            }
         }
         
         return b;
@@ -570,8 +615,8 @@ function App() {
                  <div key={imgData.id}
                       ref={(el) => setThumbRef(idx, el)}
                       onClick={() => {
-                         // Only fire click if not dragging
-                         if (isThumbDragging) return;
+                         // Suppress click if drag just ended or still active
+                         if (isThumbDragging || justDraggedRef.current) return;
                          setPresetConfigs(prev => ({ ...prev, [activePreset]: boxes }));
                          setActiveImageId(imgData.id);
                          setActivePreset(imgData.preset);
@@ -600,7 +645,7 @@ function App() {
                     >
                        <Trash2 size={12} />
                     </button>
-                    <img src={imgData.url} alt="thumb" style={{ height: '80px', objectFit: 'contain', pointerEvents: 'none' }} />
+                    <img src={imgData.url} alt="thumb" draggable={false} style={{ height: '80px', objectFit: 'contain', pointerEvents: 'none' }} />
                     <select 
                        value={imgData.preset} 
                        className={`thumbnail-select ${duplicateTabs.includes(imgData.preset) ? 'error' : ''}`}
@@ -628,8 +673,8 @@ function App() {
               </div>
             </div>
 
-            {/* Drag ghost overlay */}
-            {isThumbDragging && thumbDragIndex !== -1 && uploadedImages[thumbDragIndex] && (
+            {/* Drag ghost rendered via portal to avoid backdrop-filter offset */}
+            {isThumbDragging && thumbDragIndex !== -1 && uploadedImages[thumbDragIndex] && createPortal(
               <div
                 className="drag-ghost"
                 style={{
@@ -639,9 +684,10 @@ function App() {
                   height: `${thumbGhost.height}px`,
                 }}
               >
-                <img src={uploadedImages[thumbDragIndex].url} alt="drag" style={{ height: '80px', objectFit: 'contain', pointerEvents: 'none' }} />
+                <img src={uploadedImages[thumbDragIndex].url} alt="drag" draggable={false} style={{ height: '80px', objectFit: 'contain', pointerEvents: 'none' }} />
                 <span className="drag-ghost-label">{uploadedImages[thumbDragIndex].preset.toUpperCase()} TAB</span>
-              </div>
+              </div>,
+              document.body
             )}
 
             {hasDuplicates && (
