@@ -17,20 +17,21 @@ export default function DataTable({ rows }) {
     if (!match) return;
     
     // We'll copy all 10 players of this match
-    const header = ['Player Index', ...columns.map(c => c.label)].join('\t');
+    const header = ['Player Index', 'IGN', ...columns.map(c => c.label)].join('\t');
     const textRows = match.data.map(player => {
-      return [player.playerIndex, ...columns.map(col => player[col.id] || '')].join('\t');
+      return [player.playerIndex, player.ign || '', ...columns.map(col => player[col.id] || '')].join('\t');
     });
     const text = [header, ...textRows].join('\n');
     navigator.clipboard.writeText(text);
   };
 
   const downloadCSV = () => {
-    const header = ['Match Timestamp', 'Player Index', ...columns.map(c => c.label)].join(',');
+    const header = ['Match Timestamp', 'Player Index', 'IGN', ...columns.map(c => c.label)].join(',');
     const csvRows = [];
     rows.forEach(match => {
        match.data.forEach(player => {
-          const rowValues = [match.timestamp, player.playerIndex, ...columns.map(col => player[col.id] || '')];
+          const safeIgn = player.ign ? `"${player.ign.replace(/"/g, '""')}"` : '';
+          const rowValues = [match.timestamp, player.playerIndex, safeIgn, ...columns.map(col => player[col.id] || '')];
           csvRows.push(rowValues.join(','));
        });
     });
@@ -68,6 +69,7 @@ export default function DataTable({ rows }) {
               <thead>
                 <tr>
                   <th>P#</th>
+                  <th>IGN</th>
                   {columns.map(col => <th key={col.id}>{col.label}</th>)}
                 </tr>
               </thead>
@@ -75,6 +77,7 @@ export default function DataTable({ rows }) {
                 {match.data.map(player => (
                   <tr key={player.playerIndex}>
                     <td style={{ color: 'var(--color-mlbb-blue)', fontWeight: 'bold' }}>{player.playerIndex}</td>
+                    <td style={{ fontWeight: '600' }}>{player.ign || '-'}</td>
                     {columns.map(col => (
                       <td key={col.id}>{player[col.id] || '-'}</td>
                     ))}

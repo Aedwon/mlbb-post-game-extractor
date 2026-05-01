@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, Plus, Play, Download, Copy, Trash2, Crosshair, X, RefreshCcw, GripVertical } from 'lucide-react';
+import { Upload, Plus, Play, Download, Copy, Trash2, Crosshair, X, RefreshCcw, GripVertical, HelpCircle, Users } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import ReviewModal from './components/ReviewModal';
 import DataTable from './components/DataTable';
+import OnboardingModal from './components/OnboardingModal';
 import { useDragReorder } from './hooks/useDragReorder';
 
 // Default reference width for mirroring (typical MLBB screenshot)
@@ -157,6 +158,24 @@ const sanitizeOCR = (text) => {
 function App() {
   const [uploadedImages, setUploadedImages] = useState([]);
   const [activeImageId, setActiveImageId] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('onboarding_completed') !== 'true');
+  const [playerIGNs, setPlayerIGNs] = useState(Array(10).fill(''));
+  const [showRoster, setShowRoster] = useState(false);
+  const [ignHistory, setIgnHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('ign_history')) || [];
+    } catch {
+      return [];
+    }
+  });
+
+  const updateIGN = (index, value) => {
+    setPlayerIGNs(prev => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  };
   
   const [presetConfigs, setPresetConfigs] = useState(PRESET_DEFAULTS);
   
@@ -570,9 +589,20 @@ function App() {
           }
         });
       });
+      row.ign = playerIGNs[p - 1] || '';
       playerRows.push(row);
     }
     
+    // Update IGN history
+    const newIGNs = playerIGNs.filter(ign => ign.trim() !== '');
+    if (newIGNs.length > 0) {
+      setIgnHistory(prev => {
+        const updated = Array.from(new Set([...newIGNs, ...prev])).slice(0, 100);
+        localStorage.setItem('ign_history', JSON.stringify(updated));
+        return updated;
+      });
+    }
+
     setSavedRows(prev => [...prev, {
       id: Date.now().toString(),
       timestamp: new Date().toLocaleTimeString(),
@@ -582,6 +612,11 @@ function App() {
     setReviewData(null);
   };
 
+  const handleOnboardingClose = () => {
+    localStorage.setItem('onboarding_completed', 'true');
+    setShowOnboarding(false);
+  };
+
   const duplicateTabs = uploadedImages.filter((img, i, arr) => arr.findIndex(img2 => img2.preset === img.preset) !== i).map(img => img.preset);
   const hasDuplicates = duplicateTabs.length > 0;
 
@@ -589,7 +624,16 @@ function App() {
     <div className="app-container">
       <header className="header">
         <h1 className="title-glow">MLBB <span>STAT</span> EXTRACTOR</h1>
-        <p className="subtitle">// BATCH EXTRACTION TERMINAL v2.0</p>
+        <p className="subtitle" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          // BATCH EXTRACTION TERMINAL v2.0
+          <button 
+            className="help-trigger-btn" 
+            onClick={() => setShowOnboarding(true)}
+            title="Open Tutorial"
+          >
+            <HelpCircle size={14} />
+          </button>
+        </p>
       </header>
 
       <div className="glass-panel">
@@ -708,10 +752,53 @@ function App() {
                   <div className="toggle-indicator"></div>
                   <span className="toggle-text">SYMMETRY LOCK</span>
                 </label>
+                <button className={`btn ${showRoster ? 'btn-cyan' : ''}`} onClick={() => setShowRoster(!showRoster)}>
+                  <Users size={16} /> PLAYER_ROSTER
+                </button>
               </div>
               <button className="btn btn-cyan" onClick={processOCR} disabled={isProcessing || hasDuplicates}>
                 {isProcessing ? 'SCANNING...' : <><Play size={16} /> INITIALIZE BATCH OCR</>}
               </button>
+            </div>
+
+            <div className={`roster-panel ${showRoster ? 'expanded' : ''}`}>
+              <div className="roster-grid">
+                <div className="roster-column blue">
+                  <div className="roster-column-label text-blue">BLUE_TEAM</div>
+                  {[0, 1, 2, 3, 4].map(idx => (
+                    <div key={idx} className="roster-input-wrapper">
+                      <span className="roster-input-index">P{idx + 1}</span>
+                      <input 
+                        type="text" 
+                        className="roster-input" 
+                        placeholder="PLAYER_IGN" 
+                        value={playerIGNs[idx]}
+                        onChange={(e) => updateIGN(idx, e.target.value)}
+                        list="ign-history-list"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="roster-column red">
+                  <div className="roster-column-label text-red">RED_TEAM</div>
+                  {[5, 6, 7, 8, 9].map(idx => (
+                    <div key={idx} className="roster-input-wrapper">
+                      <span className="roster-input-index">P{idx + 1}</span>
+                      <input 
+                        type="text" 
+                        className="roster-input" 
+                        placeholder="PLAYER_IGN" 
+                        value={playerIGNs[idx]}
+                        onChange={(e) => updateIGN(idx, e.target.value)}
+                        list="ign-history-list"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <datalist id="ign-history-list">
+                {ignHistory.map((ign, i) => <option key={i} value={ign} />)}
+              </datalist>
             </div>
             
             <div 
@@ -779,6 +866,8 @@ function App() {
           onCancel={() => setReviewData(null)} 
         />
       )}
+
+      {showOnboarding && <OnboardingModal onClose={handleOnboardingClose} />}
     </div>
   );
 }
