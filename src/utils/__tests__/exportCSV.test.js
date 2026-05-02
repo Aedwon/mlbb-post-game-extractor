@@ -110,3 +110,72 @@ describe('exportLongCSV', () => {
     expect(STAT_COLS).toHaveLength(19);
   });
 });
+
+import { exportWideCSV } from '../exportCSV';
+
+describe('exportWideCSV', () => {
+  test('emits 2 lines: header + 1 data row', () => {
+    const csv = exportWideCSV(makeMatch());
+    expect(csv.split('\n')).toHaveLength(2);
+  });
+
+  test('header has exactly 226 columns', () => {
+    const csv = exportWideCSV(makeMatch());
+    const header = csv.split('\n')[0];
+    expect(header.split(',')).toHaveLength(226);
+  });
+
+  test('data row has exactly 226 values', () => {
+    const csv = exportWideCSV(makeMatch());
+    const dataRow = csv.split('\n')[1];
+    expect(dataRow.split(',')).toHaveLength(226);
+  });
+
+  test('headers follow blue-then-red, exp/jungle/mid/roam/gold order', () => {
+    const csv = exportWideCSV(makeMatch());
+    const header = csv.split('\n')[0];
+    expect(header).toContain('blue_exp_kills');
+    expect(header).toContain('blue_gold_minion_gold');
+    expect(header).toContain('red_exp_ign');
+    expect(header).toContain('red_gold_minion_gold');
+    expect(header.indexOf('blue_exp_ign')).toBeLessThan(header.indexOf('blue_jungle_ign'));
+    expect(header.indexOf('blue_gold_minion_gold')).toBeLessThan(header.indexOf('red_exp_ign'));
+  });
+
+  test('match metadata appears once at the start of the row', () => {
+    const csv = exportWideCSV(makeMatch());
+    const [header, row] = csv.split('\n');
+    const headerCols = header.split(',');
+    const rowCols = row.split(',');
+    expect(headerCols[0]).toBe('battle_id');
+    expect(rowCols[0]).toBe('BID123');
+  });
+
+  test('handles 6-ban mode with blank slots 4 and 5', () => {
+    const csv = exportWideCSV(makeMatch());
+    const [header, row] = csv.split('\n');
+    const headerCols = header.split(',');
+    const rowCols = row.split(',');
+    const ban4Idx = headerCols.indexOf('blue_ban_4');
+    expect(rowCols[ban4Idx]).toBe('');
+  });
+
+  test('emits empty values when a slot has no matching player', () => {
+    // Build a match where Blue has no Mid laner (incomplete roster, edge case)
+    const match = makeMatch();
+    match.players = match.players.filter(p => !(p.side === 'blue' && p.role === 'mid'));
+    const csv = exportWideCSV(match);
+    const [header, row] = csv.split('\n');
+    const headerCols = header.split(',');
+    const rowCols = row.split(',');
+    const blueMidKillsIdx = headerCols.indexOf('blue_mid_kills');
+    expect(rowCols[blueMidKillsIdx]).toBe('');
+  });
+
+  test('CSV-escapes values with commas or quotes', () => {
+    const match = makeMatch();
+    match.players[0].ign = 'player, "comma" guy';
+    const csv = exportWideCSV(match);
+    expect(csv).toContain('"player, ""comma"" guy"');
+  });
+});
