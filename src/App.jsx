@@ -6,6 +6,7 @@ import ReviewModal from './components/ReviewModal';
 import DataTable from './components/DataTable';
 import OnboardingModal from './components/OnboardingModal';
 import MatchMetadataForm, { makeDefaultMetadata } from './components/MatchMetadataForm';
+import { parseDuration } from './utils/parseDuration';
 import { useDragReorder } from './hooks/useDragReorder';
 
 // Default reference width for mirroring (typical MLBB screenshot)
@@ -608,11 +609,18 @@ function App() {
       });
     }
 
+    const durationSeconds = parseDuration(finalData['duration']);
+
     setSavedRows(prev => [...prev, {
       id: Date.now().toString(),
       timestamp: new Date().toLocaleTimeString(),
       data: playerRows,
-      columns: Object.values(presetConfigs).flat()
+      columns: Object.values(presetConfigs).flat(),
+      metadata: {
+        ...matchMetadata,
+        duration: durationSeconds,
+      },
+      assignments: playerAssignments,
     }]);
     setReviewData(null);
     setPlayerAssignments({});
