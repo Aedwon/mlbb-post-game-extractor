@@ -5,6 +5,7 @@ import Tesseract from 'tesseract.js';
 import ReviewModal from './components/ReviewModal';
 import DataTable from './components/DataTable';
 import OnboardingModal from './components/OnboardingModal';
+import MatchMetadataForm, { makeDefaultMetadata } from './components/MatchMetadataForm';
 import { useDragReorder } from './hooks/useDragReorder';
 
 // Default reference width for mirroring (typical MLBB screenshot)
@@ -162,6 +163,7 @@ function App() {
   const [activeImageId, setActiveImageId] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('onboarding_completed') !== 'true');
   const [playerIGNs, setPlayerIGNs] = useState(Array(10).fill(''));
+  const [matchMetadata, setMatchMetadata] = useState(makeDefaultMetadata());
   const [showRoster, setShowRoster] = useState(false);
   const [ignHistory, setIgnHistory] = useState(() => {
     try {
@@ -637,6 +639,11 @@ function App() {
           </button>
         </p>
       </header>
+
+      <MatchMetadataForm
+        metadata={matchMetadata}
+        onChange={setMatchMetadata}
+      />
 
       <div className="glass-panel">
         {uploadedImages.length === 0 ? (
