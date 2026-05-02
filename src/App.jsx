@@ -49,6 +49,7 @@ const BASE_PRESETS = {
 // This map defines the red-side column order for tabs that differ from blue.
 const RED_COLUMN_ORDER = {
   main: ['gold', 'kills', 'deaths', 'assists', 'rating'],
+  dps: ['consec_kills', 'hero_dmg'],
 };
 
 const generateDefaults = (presets, imgWidth = DEFAULT_IMG_WIDTH) => {
