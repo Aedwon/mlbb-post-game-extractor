@@ -13,6 +13,7 @@ const DEFAULT_IMG_WIDTH = 1920;
 const BASE_PRESETS = {
   main: [
     { id: 'battle_id', label: 'Battle ID', x: 20, y: 700, width: 250, height: 40, type: 'header' },
+    { id: 'duration', label: 'Duration', x: 1700, y: 100, width: 200, height: 50, type: 'header' },
     { id: 'kills', label: 'Kills', x: 400, y: 350, width: 40, height: 400 },
     { id: 'deaths', label: 'Deaths', x: 450, y: 350, width: 40, height: 400 },
     { id: 'assists', label: 'Assists', x: 500, y: 350, width: 40, height: 400 },
