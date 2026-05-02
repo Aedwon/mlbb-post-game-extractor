@@ -164,6 +164,7 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('onboarding_completed') !== 'true');
   const [playerIGNs, setPlayerIGNs] = useState(Array(10).fill(''));
   const [matchMetadata, setMatchMetadata] = useState(makeDefaultMetadata());
+  const [playerAssignments, setPlayerAssignments] = useState({});
   const [showRoster, setShowRoster] = useState(false);
   const [ignHistory, setIgnHistory] = useState(() => {
     try {
@@ -614,6 +615,8 @@ function App() {
       columns: Object.values(presetConfigs).flat()
     }]);
     setReviewData(null);
+    setPlayerAssignments({});
+    setMatchMetadata(makeDefaultMetadata());
   };
 
   const handleOnboardingClose = () => {
@@ -869,9 +872,11 @@ function App() {
       )}
 
       {reviewData && (
-        <ReviewModal 
-          data={reviewData} 
-          onConfirm={handleReviewConfirm} 
+        <ReviewModal
+          data={reviewData}
+          playerAssignments={playerAssignments}
+          onAssignmentsChange={setPlayerAssignments}
+          onConfirm={handleReviewConfirm}
           onCancel={() => setReviewData(null)} 
         />
       )}
