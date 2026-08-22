@@ -7,6 +7,7 @@ import DataTable from './components/DataTable';
 import OnboardingModal from './components/OnboardingModal';
 import MatchMetadataForm, { makeDefaultMetadata } from './components/MatchMetadataForm';
 import { parseDuration } from './utils/parseDuration';
+import { recognizeNumericField } from './utils/ocrNumbers';
 import { useDragReorder } from './hooks/useDragReorder';
 
 // Default reference width for mirroring (typical MLBB screenshot)
@@ -135,28 +136,6 @@ const levenshtein = (a, b) => {
     }
   }
   return matrix[a.length][b.length];
-};
-
-const sanitizeOCR = (text) => {
-  // Split into potential value tokens
-  const tokens = text.split(/\s+/).filter(t => t.trim().length > 0);
-  
-  const isPercent = (t) => /%\s*$/.test(t) || /^\s*%/.test(t) || t.includes('%');
-  
-  const percentTokens = tokens.filter(isPercent);
-  const nonPercentTokens = tokens.filter(t => !isPercent(t));
-  
-  let result;
-  if (nonPercentTokens.length > 0) {
-    // If we have non-percentage values, prioritize them
-    result = nonPercentTokens.join(' ');
-  } else {
-    // If only percentages exist (like Teamfight %), keep them
-    result = tokens.join(' ');
-  }
-
-  // Keep numbers, dots, slashes, K/M multipliers, and % (if it was preserved), plus spaces
-  return result.replace(/[^0-9./KkMm%\s]/g, '').replace(/\s+/g, ' ').trim();
 };
 
 function App() {
@@ -439,58 +418,55 @@ function App() {
   const processOCR = async () => {
     if (!imageObjRef.current || boxes.length === 0 || uploadedImages.length === 0) return;
     setIsProcessing(true);
-    
-    // Sync the current preset's boxes into presetConfigs before processing
+
     const currentConfigs = { ...presetConfigs, [activePreset]: boxes };
     setPresetConfigs(currentConfigs);
-    
-    const results = [];
-    
-    try {
-      const worker = await Tesseract.createWorker('eng');
-      await worker.setParameters({
-        tessedit_char_whitelist: '0123456789./%',
-      });
 
-      // --- Battle ID Verification Pass ---
+    let worker = null;
+
+    try {
+      worker = await Tesseract.createWorker('eng');
+      let verifiedBattleId = null;
+
+      // The same Battle ID appears on every tab. Read every copy, choose the
+      // medoid (smallest total edit distance), then use it as the canonical ID.
+      // This prevents one noisy screenshot from becoming the reference value.
       const mainConfig = activePreset === 'main' ? boxes : currentConfigs.main;
-      const battleIdBox = mainConfig.find(b => b.id === 'battle_id');
-      
+      const battleIdBox = mainConfig?.find(b => b.id === 'battle_id');
+
       if (battleIdBox) {
-         let referenceId = null;
-         for (const imgData of uploadedImages) {
-            const offCanvas = document.createElement('canvas');
-            offCanvas.width = battleIdBox.width;
-            offCanvas.height = battleIdBox.height;
-            const ctx = offCanvas.getContext('2d');
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
-            ctx.drawImage(
-               imgData.imgObj,
-               battleIdBox.x, battleIdBox.y,
-               battleIdBox.width, battleIdBox.height,
-               0, 0,
-               battleIdBox.width, battleIdBox.height
-            );
-            const { data: { text } } = await worker.recognize(offCanvas.toDataURL('image/png'));
-            const extractedId = text.trim().replace(/[^0-9]/g, '');
-            
-            if (extractedId.length > 5) {
-                if (!referenceId) {
-                   referenceId = extractedId;
-                } else {
-                   const dist = levenshtein(referenceId, extractedId);
-                   if (dist > 3) {
-                      alert(`Battle ID mismatch detected!\nExpected: ${referenceId}\nFound: ${extractedId} (in ${imgData.preset} tab)\n\nPlease ensure all screenshots are from the same match.`);
-                      await worker.terminate();
-                      setIsProcessing(false);
-                      return;
-                   }
-                }
+        const idReads = [];
+        for (const imgData of uploadedImages) {
+          const reading = await recognizeNumericField(
+            worker,
+            imgData.imgObj,
+            battleIdBox,
+            'battle_id',
+            { padding: 6 },
+          );
+          if (reading.valid) {
+            idReads.push({ text: reading.text, preset: imgData.preset, confidence: reading.confidence });
+          }
+        }
+
+        if (idReads.length > 0) {
+          const ranked = idReads.map(read => ({
+            ...read,
+            totalDistance: idReads.reduce((sum, other) => sum + levenshtein(read.text, other.text), 0),
+          })).sort((a, b) => a.totalDistance - b.totalDistance || b.confidence - a.confidence);
+
+          verifiedBattleId = ranked[0].text;
+
+          for (const read of idReads) {
+            const dist = levenshtein(verifiedBattleId, read.text);
+            if (dist > 3) {
+              alert(`Battle ID mismatch detected!\nExpected: ${verifiedBattleId}\nFound: ${read.text} (in ${read.preset} tab)\n\nPlease ensure all screenshots are from the same match.`);
+              return;
             }
-         }
+          }
+        }
       }
-      
+
       const allResults = [];
 
       for (const imgData of uploadedImages) {
@@ -499,80 +475,71 @@ function App() {
 
         for (const box of configBoxes) {
           if (box.type === 'header') {
-             // Standard 1-to-1 extraction for header boxes
-             const offCanvas = document.createElement('canvas');
-             offCanvas.width = box.width;
-             offCanvas.height = box.height;
-             const ctx = offCanvas.getContext('2d');
-             ctx.fillStyle = 'white';
-             ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
-             ctx.drawImage(
-                imgData.imgObj,
-                box.x, box.y, box.width, box.height,
-                0, 0, box.width, box.height
-             );
-             const { data: { text } } = await worker.recognize(offCanvas.toDataURL('image/png'));
-             
-             // Prevent pushing duplicate header entries from multiple images (e.g. Battle ID)
-             if (!allResults.some(r => r.id === box.id)) {
-                 allResults.push({
-                   id: box.id,
-                   boxId: box.id,
-                   label: box.label,
-                   playerIndex: 0,
-                   text: sanitizeOCR(text),
-                   imgDataUrl: offCanvas.toDataURL('image/png')
-                 });
-             }
-             continue;
+            const reading = await recognizeNumericField(
+              worker,
+              imgData.imgObj,
+              box,
+              box.id,
+              { padding: 6 },
+            );
+
+            if (!allResults.some(r => r.id === box.id)) {
+              allResults.push({
+                id: box.id,
+                boxId: box.id,
+                label: box.label,
+                playerIndex: 0,
+                text: box.id === 'battle_id' && verifiedBattleId ? verifiedBattleId : reading.text,
+                imgDataUrl: reading.previewDataUrl,
+              });
+            }
+            continue;
           }
 
           const sliceHeight = box.height / 5;
           const isLeftTeam = box.x < (imgData.width / 2);
-          
+
           for (let i = 0; i < 5; i++) {
-            const offCanvas = document.createElement('canvas');
-            const pad = 4;
-            offCanvas.width = box.width + pad*2;
-            offCanvas.height = sliceHeight + pad*2;
-            const ctx = offCanvas.getContext('2d');
-            
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
-            
-            ctx.drawImage(
+            const reading = await recognizeNumericField(
+              worker,
               imgData.imgObj,
-              Math.max(0, box.x - pad), Math.max(0, box.y + (sliceHeight * i) - pad),
-              box.width + pad*2, sliceHeight + pad*2,
-              0, 0,
-              box.width + pad*2, sliceHeight + pad*2
+              {
+                x: box.x,
+                y: box.y + (sliceHeight * i),
+                width: box.width,
+                height: sliceHeight,
+              },
+              box.id,
+              { padding: 4 },
             );
-            
-            const dataUrl = offCanvas.toDataURL('image/png');
-            const { data: { text } } = await worker.recognize(dataUrl);
-            
+
             const playerIndex = isLeftTeam ? (i + 1) : (i + 6);
-            
+
             allResults.push({
               id: `${box.id}_p${playerIndex}`,
               boxId: box.id,
               label: `[${imgData.preset.toUpperCase()}] ${box.label}`,
               playerIndex,
-              text: sanitizeOCR(text),
-              imgDataUrl: dataUrl
+              text: reading.text,
+              imgDataUrl: reading.previewDataUrl,
             });
           }
         }
       }
-      
-      await worker.terminate();
-      
+
       allResults.sort((a, b) => a.playerIndex - b.playerIndex);
       setReviewData(allResults);
     } catch (err) {
       console.error(err);
       alert("OCR Processing failed.");
     } finally {
+      if (worker) {
+        try {
+          await worker.terminate();
+        } catch (terminateError) {
+          console.warn('Failed to terminate OCR worker cleanly', terminateError);
+        }
+      }
       setIsProcessing(false);
     }
   };

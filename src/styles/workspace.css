@@ -1,0 +1,115 @@
+/* Extraction-workspace hierarchy layered after the base hierarchy pass. */
+
+.batch-gallery {
+  position: relative;
+  padding-top: 2.65rem;
+}
+
+.batch-gallery::before {
+  content: 'Screenshots';
+  position: absolute;
+  top: 0.75rem;
+  left: 0.8rem;
+  color: var(--color-text-primary);
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.batch-gallery::after {
+  content: 'Assign one unique MLBB tab to each image';
+  position: absolute;
+  top: 0.82rem;
+  left: 7rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* The toolbar containing the Play/OCR button becomes the configuration header. */
+.glass-panel div:has(> .btn-cyan svg.lucide-play) {
+  padding: 0.9rem 1rem !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.018);
+  gap: 1rem;
+}
+
+.glass-panel div:has(> .btn-cyan svg.lucide-play) > div:first-child {
+  gap: 0.5rem !important;
+}
+
+.glass-panel div:has(> .btn-cyan svg.lucide-play) .subtitle {
+  margin-right: 0.4rem;
+  color: var(--color-text-primary) !important;
+  font-family: var(--font-display);
+  font-size: 0.76rem !important;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Secondary editing controls should read as a compact tool group. */
+.glass-panel div:has(> .btn-cyan svg.lucide-play) .btn:not(.btn-cyan),
+.glass-panel div:has(> .btn-cyan svg.lucide-play) .custom-toggle {
+  min-height: 34px;
+  padding-block: 0.42rem;
+}
+
+/* Warning is important but should not become a second full panel. */
+.glass-panel .glass-panel[style*="--color-mlbb-red"] {
+  box-shadow: none;
+  border-radius: var(--radius-sm);
+}
+
+/* Canvas status reads like a quiet footer, not another headline. */
+.canvas-container + .subtitle {
+  margin-top: -0.7rem;
+  color: var(--text-tertiary) !important;
+  font-size: 0.64rem !important;
+  letter-spacing: 0.06em;
+}
+
+/* Destructive batch action is intentionally low emphasis until hovered. */
+.canvas-container + .subtitle + .btn {
+  margin-top: -0.7rem !important;
+  border-color: rgba(255, 0, 60, 0.18);
+  color: var(--text-tertiary);
+  background: transparent;
+}
+
+.canvas-container + .subtitle + .btn:hover:not(:disabled) {
+  border-color: rgba(255, 0, 60, 0.5);
+  color: #ff6b84;
+  background: rgba(255, 0, 60, 0.045);
+}
+
+/* Results heading separates the completed state from the active workspace. */
+.app-container > .glass-panel:nth-of-type(n + 3) > h2:first-child {
+  margin-bottom: 0.25rem !important;
+  color: var(--color-text-primary) !important;
+  font-size: 1.2rem;
+}
+
+@media (max-width: 900px) {
+  .glass-panel div:has(> .btn-cyan svg.lucide-play) {
+    align-items: stretch !important;
+    flex-direction: column;
+  }
+
+  .glass-panel div:has(> .btn-cyan svg.lucide-play) > .btn-cyan {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 620px) {
+  .batch-gallery::after {
+    display: none;
+  }
+
+  .batch-gallery::before {
+    font-size: 0.74rem;
+  }
+}
