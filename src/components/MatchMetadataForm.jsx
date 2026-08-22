@@ -18,10 +18,9 @@ export default function MatchMetadataForm({ metadata, onChange }) {
 
   const banSlots = metadata.ban_mode === 6 ? 6 : 10;
 
-  // Ban draft order labels: alternating Blue/Red starting with Blue
   const banLabel = (i) => {
     const side = i % 2 === 0 ? 'Blue' : 'Red';
-    return `Ban ${i + 1} (${side})`;
+    return `Ban ${i + 1} · ${side}`;
   };
 
   const updateField = (field, value) => {
@@ -50,26 +49,29 @@ export default function MatchMetadataForm({ metadata, onChange }) {
   };
 
   return (
-    <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1rem' }}>
-      <div
-        style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '0.5rem' }}
+    <section className="glass-panel match-setup" aria-labelledby="match-setup-title">
+      <button
+        type="button"
+        className="match-setup__toggle"
         onClick={() => setCollapsed(c => !c)}
+        aria-expanded={!collapsed}
       >
         {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-        <h3 style={{ margin: 0, fontSize: '0.95rem' }} className="text-gold">
-          MATCH_METADATA
-        </h3>
-        <span className="subtitle" style={{ fontSize: '0.7rem', marginLeft: '0.5rem' }}>
-          // Optional pre-OCR fields. Patch + winner recommended.
-        </span>
-      </div>
+        <div className="match-setup__title-group">
+          <h3 id="match-setup-title" className="match-setup__title">Match setup</h3>
+          <span className="match-setup__hint">Patch, winner, and draft context</span>
+        </div>
+        <span className="match-setup__optional">OPTIONAL</span>
+      </button>
 
       {!collapsed && (
-        <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-            <div className="review-input-group">
-              <label>PATCH</label>
+        <div className="match-setup__body">
+          <div className="match-setup__primary-grid">
+            <div className="metadata-field">
+              <label className="field-label" htmlFor="metadata-patch">Patch</label>
               <input
+                id="metadata-patch"
+                className="metadata-input"
                 type="text"
                 value={metadata.patch}
                 onChange={e => updateField('patch', e.target.value)}
@@ -77,10 +79,11 @@ export default function MatchMetadataForm({ metadata, onChange }) {
                 autoComplete="off"
               />
             </div>
-            <div className="review-input-group">
-              <label>WINNING_SIDE</label>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+
+            <div className="metadata-field">
+              <span className="field-label">Winning side</span>
+              <div className="segmented-control" role="radiogroup" aria-label="Winning side">
+                <label className="blue">
                   <input
                     type="radio"
                     name="winning_side"
@@ -88,9 +91,9 @@ export default function MatchMetadataForm({ metadata, onChange }) {
                     checked={metadata.winning_side === 'blue'}
                     onChange={() => updateField('winning_side', 'blue')}
                   />
-                  <span className="text-blue">Blue</span>
+                  Blue
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <label className="red">
                   <input
                     type="radio"
                     name="winning_side"
@@ -98,46 +101,48 @@ export default function MatchMetadataForm({ metadata, onChange }) {
                     checked={metadata.winning_side === 'red'}
                     onChange={() => updateField('winning_side', 'red')}
                   />
-                  <span className="text-red">Red</span>
+                  Red
                 </label>
               </div>
             </div>
-            <div className="review-input-group">
-              <label>BAN_MODE</label>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+
+            <div className="metadata-field">
+              <span className="field-label">Ban format</span>
+              <div className="segmented-control" role="radiogroup" aria-label="Ban format">
+                <label>
                   <input
                     type="radio"
                     name="ban_mode"
                     checked={metadata.ban_mode === 6}
                     onChange={() => handleBanModeChange(6)}
                   />
-                  6-ban
+                  6 bans
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <label>
                   <input
                     type="radio"
                     name="ban_mode"
                     checked={metadata.ban_mode === 10}
                     onChange={() => handleBanModeChange(10)}
                   />
-                  10-ban
+                  10 bans
                 </label>
               </div>
             </div>
           </div>
 
-          <div>
-            <label style={{ fontSize: '0.7rem', opacity: 0.7 }}>BANS (draft order, optional)</label>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-              gap: '0.5rem', marginTop: '0.5rem',
-            }}>
+          <div className="match-setup__bans">
+            <div className="match-setup__bans-heading">
+              <span className="field-label">Draft bans</span>
+              <span>Optional · entered in draft order</span>
+            </div>
+            <div className="match-setup__ban-grid">
               {Array.from({ length: banSlots }, (_, i) => (
-                <div key={i} className="review-input-group">
-                  <label style={{ fontSize: '0.7rem' }}>{banLabel(i)}</label>
+                <div key={i} className="metadata-field">
+                  <label className="field-label" htmlFor={`ban-${i}`}>{banLabel(i)}</label>
                   <input
+                    id={`ban-${i}`}
+                    className="metadata-input"
                     list={`ban-hero-list-${i}`}
                     value={metadata.bans[i] || ''}
                     onChange={e => updateBan(i, e.target.value)}
@@ -153,6 +158,6 @@ export default function MatchMetadataForm({ metadata, onChange }) {
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
