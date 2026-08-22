@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Check, X, AlertCircle } from 'lucide-react';
+import React, { Fragment, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Check, X } from 'lucide-react';
 import { HEROES } from '../constants/mlbbHeroes';
 import { ROLES, ROLE_LABELS } from '../constants/mlbbRoles';
 import { validateRoster } from '../utils/validateRoster';
@@ -21,7 +21,6 @@ export default function ReviewModal({
     setEditedData(initial);
   }, [data]);
 
-  // Group OCR items by player_index
   const playerGroups = useMemo(() => {
     const groups = {};
     for (const item of data) {
@@ -32,9 +31,9 @@ export default function ReviewModal({
     return groups;
   }, [data]);
 
+  const matchItems = playerGroups[0] || [];
   const playerIndexes = Array.from({ length: 10 }, (_, i) => i + 1);
 
-  // Build a 10-player array for validation
   const rosterForValidation = useMemo(() => {
     return playerIndexes.map(idx => ({
       player_index: idx,
@@ -64,7 +63,6 @@ export default function ReviewModal({
     onConfirm(editedData);
   };
 
-  // Per-player error highlighting
   const errorsByField = useMemo(() => {
     const map = {};
     for (const err of validation.errors) {
@@ -87,110 +85,139 @@ export default function ReviewModal({
     return map;
   }, [validation.errors, rosterForValidation]);
 
+  const renderOCRField = (item) => (
+    <div key={item.id} className="review-input-group">
+      <label>{item.label.replace(/^\[[^\]]+\]\s*/, '')}</label>
+      {item.imgDataUrl && (
+        <div className="ocr-preview" title="Preprocessed crop used by OCR">
+          <img src={item.imgDataUrl} alt="OCR crop" />
+        </div>
+      )}
+      <input
+        type="text"
+        value={editedData[item.id] || ''}
+        onChange={e => handleChange(item.id, e.target.value)}
+        autoComplete="off"
+      />
+    </div>
+  );
+
   return (
     <div className="modal-overlay">
       <div className="modal-content glass-panel">
         <header className="modal-header">
-          <h2 className="text-gold">VERIFY_EXTRACTED_DATA</h2>
-          <button className="btn-icon" onClick={onCancel}>
+          <div>
+            <h2>Review extraction</h2>
+            <span className="subtitle">Verify OCR values, then assign hero and role</span>
+          </div>
+          <button className="btn-icon" onClick={onCancel} aria-label="Close review">
             <X size={20} />
           </button>
         </header>
 
-        <p className="subtitle">
-          // Compare image snippets with OCR output. Assign hero + role per player.
-        </p>
+        <div className="review-modal__intro">
+          <p className="subtitle">
+            Preprocessed image strips show exactly what the OCR engine evaluated.
+          </p>
+          <span className={validation.valid ? 'text-blue' : 'text-muted'}>
+            {validation.valid ? 'Roster complete' : `${validation.errors.length} roster issue(s)`}
+          </span>
+        </div>
 
         {!validation.valid && (
           <div className="validation-banner" style={{
             display: 'flex', alignItems: 'center', gap: '0.5rem',
-            padding: '0.75rem', marginBottom: '1rem',
-            background: 'rgba(255, 80, 80, 0.1)',
-            border: '1px solid rgba(255, 80, 80, 0.4)',
-            borderRadius: '4px',
+            background: 'rgba(255, 80, 80, 0.08)',
+            color: '#ff8a8a',
           }}>
-            <AlertCircle size={16} color="#ff5050" />
-            <span style={{ fontSize: '0.85rem' }}>
-              {validation.errors.length} issue(s) — fix to enable commit
+            <AlertCircle size={16} />
+            <span style={{ fontSize: '0.82rem' }}>
+              Assign one hero and one unique role per player to enable commit.
             </span>
           </div>
         )}
 
         <div className="review-list">
+          {matchItems.length > 0 && (
+            <div className="review-player-block">
+              <div className="review-player-header">
+                <span className="review-player-label text-gold">MATCH</span>
+                <span className="text-muted" style={{ gridColumn: 'span 2', fontSize: '0.82rem' }}>
+                  Match-level values shared across all ten player rows
+                </span>
+              </div>
+              <div className="player-stat-row">
+                {matchItems.map(renderOCRField)}
+              </div>
+            </div>
+          )}
+
           {playerIndexes.map(idx => {
             const items = playerGroups[idx] || [];
             const heroErr = errorsByField[`hero_${idx}`];
             const roleErr = errorsByField[`role_${idx}`];
+            const isBlue = idx <= 5;
+
             return (
-              <div key={idx} className="review-player-block" style={{
-                borderBottom: '1px solid var(--color-border)',
-                paddingBottom: '1rem', marginBottom: '1rem',
-              }}>
-                <div style={{
-                  display: 'flex', gap: '1rem', alignItems: 'center',
-                  marginBottom: '0.5rem',
-                }}>
-                  <label className={idx <= 5 ? 'text-blue' : 'text-red'} style={{ minWidth: '90px' }}>
-                    PLAYER_{idx}
-                  </label>
-                  <div style={{ flex: 1 }}>
-                    <input
-                      list={`hero-list-${idx}`}
-                      value={playerAssignments[idx]?.hero || ''}
-                      onChange={e => handleAssignmentChange(idx, 'hero', e.target.value)}
-                      placeholder="Hero"
-                      autoComplete="off"
-                      style={heroErr ? { borderColor: '#ff5050' } : {}}
-                      title={heroErr || ''}
-                    />
-                    <datalist id={`hero-list-${idx}`}>
-                      {HEROES.map(h => <option key={h} value={h} />)}
-                    </datalist>
+              <Fragment key={idx}>
+                {(idx === 1 || idx === 6) && (
+                  <div className={`review-player-label ${isBlue ? 'text-blue' : 'text-red'}`} style={{ margin: '1rem 0 0.55rem' }}>
+                    {isBlue ? 'BLUE TEAM' : 'RED TEAM'}
                   </div>
-                  <select
-                    value={playerAssignments[idx]?.role || ''}
-                    onChange={e => handleAssignmentChange(idx, 'role', e.target.value)}
-                    style={roleErr ? { borderColor: '#ff5050' } : {}}
-                    title={roleErr || ''}
-                  >
-                    <option value="">Role…</option>
-                    {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                  </select>
-                </div>
-                <div className="player-stat-row" style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-                  gap: '0.5rem',
-                }}>
-                  {items.map(item => (
-                    <div key={item.id} className="review-input-group">
-                      <label style={{ fontSize: '0.7rem', opacity: 0.7 }}>
-                        {item.label.toUpperCase()}
-                      </label>
+                )}
+
+                <div className="review-player-block">
+                  <div className="review-player-header">
+                    <span className={`review-player-label ${isBlue ? 'text-blue' : 'text-red'}`}>
+                      Player {idx}
+                    </span>
+
+                    <div>
                       <input
-                        type="text"
-                        value={editedData[item.id] || ''}
-                        onChange={e => handleChange(item.id, e.target.value)}
+                        list={`hero-list-${idx}`}
+                        value={playerAssignments[idx]?.hero || ''}
+                        onChange={e => handleAssignmentChange(idx, 'hero', e.target.value)}
+                        placeholder="Select hero"
                         autoComplete="off"
+                        style={heroErr ? { borderColor: '#ff5050' } : {}}
+                        title={heroErr || ''}
+                        aria-label={`Player ${idx} hero`}
                       />
+                      <datalist id={`hero-list-${idx}`}>
+                        {HEROES.map(h => <option key={h} value={h} />)}
+                      </datalist>
                     </div>
-                  ))}
+
+                    <select
+                      value={playerAssignments[idx]?.role || ''}
+                      onChange={e => handleAssignmentChange(idx, 'role', e.target.value)}
+                      style={roleErr ? { borderColor: '#ff5050' } : {}}
+                      title={roleErr || ''}
+                      aria-label={`Player ${idx} role`}
+                    >
+                      <option value="">Select role</option>
+                      {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="player-stat-row">
+                    {items.map(renderOCRField)}
+                  </div>
                 </div>
-              </div>
+              </Fragment>
             );
           })}
         </div>
 
         <div className="modal-footer">
-          <button className="btn" onClick={onCancel}>DISCARD</button>
+          <button className="btn" onClick={onCancel}>Discard</button>
           <button
             className="btn btn-cyan"
             onClick={handleConfirm}
             disabled={!validation.valid}
-            style={!validation.valid ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             title={!validation.valid ? validation.errors.join('; ') : ''}
           >
-            <Check size={16} /> COMMIT_CHANGES
+            <Check size={16} /> Commit match
           </button>
         </div>
       </div>
